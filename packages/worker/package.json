@@ -1,0 +1,20 @@
+{
+  "name": "@waybill/worker",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@waybill/shared": "*",
+    "@aws-sdk/client-sqs": "^3.622.0",
+    "@aws-sdk/client-s3": "^3.622.0",
+    "ioredis": "^5.4.1",
+    "pino": "^9.3.2"
+  },
+  "devDependencies": {
+    "bun-types": "^1.1.21",
+    "typescript": "^5.5.4"
+  }
+}

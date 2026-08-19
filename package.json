@@ -1,0 +1,16 @@
+{
+  "name": "waybill",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "bun --cwd packages/api run dev",
+    "dev:worker": "bun --cwd packages/worker run dev",
+    "prisma:generate": "bun --cwd packages/shared run prisma:generate",
+    "prisma:migrate": "bun --cwd packages/shared run prisma:migrate"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

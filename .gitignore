@@ -1,0 +1,36 @@
+# env
+.env
+.env.*
+!.env.example
+
+# dependencies
+node_modules/
+
+# build / test
+dist/
+coverage/
+*.tsbuildinfo
+*.lcov
+.nyc_output/
+
+# logs
+*.log
+logs/
+
+# os
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# editors
+.idea/
+.vscode/
+.rules
+*.swp
+*~
+
+# docker
+docker-compose.override.yml
+
+# keys
+*.pem

@@ -1,0 +1,86 @@
+// Phase 1 schema. Extend this as later phases need new fields —
+// don't add columns for features you haven't built yet.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  hmacSecret  String   @map("hmac_secret")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  events      Event[]
+  deliveries  Delivery[]
+
+  @@map("tenants")
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  type        String
+  payload     Json?
+  // Claim-check pattern: SQS caps messages at 256KB. Payloads over that
+  // threshold are stored in S3 instead, and this column holds the object
+  // key. Exactly one of `payload` / `payloadS3Key` is set — never both.
+  payloadS3Key String? @map("payload_s3_key")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  deliveries  Delivery[]
+  outbox      Outbox?
+
+  @@index([tenantId])
+  @@map("events")
+}
+
+// One row per delivery attempt target (an event may fan out to multiple
+// subscribed endpoints later — for Phase 1-2, assume one endpoint per tenant).
+model Delivery {
+  id            String    @id @default(uuid())
+  eventId       String    @map("event_id")
+  tenantId      String    @map("tenant_id")
+  targetUrl     String    @map("target_url")
+  status        DeliveryStatus @default(PENDING)
+  attemptCount  Int       @default(0) @map("attempt_count")
+  lastAttemptAt DateTime? @map("last_attempt_at")
+  nextAttemptAt DateTime? @map("next_attempt_at")
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  event         Event     @relation(fields: [eventId], references: [id])
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("deliveries")
+}
+
+enum DeliveryStatus {
+  PENDING
+  IN_FLIGHT
+  SUCCEEDED
+  FAILED
+  DEAD_LETTERED
+}
+
+// The outbox pattern: written in the same DB transaction as the Event,
+// so "event created" and "event will be published" can never drift apart.
+model Outbox {
+  id          String   @id @default(uuid())
+  eventId     String   @unique @map("event_id")
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  publishedAt DateTime? @map("published_at")
+
+  event       Event    @relation(fields: [eventId], references: [id])
+
+  @@index([published])
+  @@map("outbox")
+}
