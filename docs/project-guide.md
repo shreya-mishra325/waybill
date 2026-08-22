@@ -118,9 +118,12 @@ Work one phase at a time. Propose a file plan before writing code. Keep the laye
 
 ## 6. Phases & Checkpoints
 
-### Phase 0 — Scaffolding
-- Monorepo setup, docker-compose with Postgres + Redis, Prisma init, empty API that returns 200 on `/health`. AWS credentials wired into `.env` (test with a simple `ListQueues`/`ListBuckets` call).
-- **Done when:** `docker-compose up` brings up Postgres + Redis, `/health` responds, and a throwaway script confirms your AWS credentials can reach SQS and S3.
+### Phase 0 — Scaffolding — complete
+
+- [x] Monorepo, Docker Compose (Postgres + Redis), Prisma schema + first migration
+- [x] Empty API returns 200 on `GET /health`
+- [x] AWS credentials in `.env`; `bun run check:aws` reaches the project SQS queue and S3 bucket
+- Notes: `docs/PHASE_0_NOTES.md`
 
 ### Phase 1 — Ingestion API + Outbox
 - Tenants, Events, Deliveries, Outbox tables.
