@@ -4,11 +4,14 @@
   "private": true,
   "main": "src/index.ts",
   "scripts": {
-    "prisma:generate": "bunx prisma generate",
-    "prisma:migrate": "bunx prisma migrate dev"
+    "prisma:generate": "bunx prisma@5.22.0 generate",
+    "prisma:migrate": "bunx prisma@5.22.0 migrate dev --name init",
+    "check:aws": "bun run scripts/check-aws.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.18.0"
+    "@prisma/client": "^5.18.0",
+    "@aws-sdk/client-sqs": "^3.622.0",
+    "@aws-sdk/client-s3": "^3.622.0"
   },
   "devDependencies": {
     "prisma": "^5.18.0",
