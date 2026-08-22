@@ -6,7 +6,8 @@ that travels with a shipment and proves it arrived; this does the same for
 HTTP events.
 
 Full project guide (architecture, phases, checkpoints, production readiness):
-see `docs/project-guide.md`. Phase notes: `docs/PHASE_0_NOTES.md`.
+see `docs/project-guide.md`. Phase notes: `docs/PHASE_0_NOTES.md`,
+`docs/PHASE_1_NOTES.md`.
 Architecture diagram: `docs/waybill-architecture.pdf`
 
 ## Quick start

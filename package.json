@@ -9,7 +9,9 @@
     "dev:worker": "bun run --watch packages/worker/src/index.ts",
     "prisma:generate": "bunx prisma@5.22.0 generate --schema packages/shared/prisma/schema.prisma",
     "prisma:migrate": "bunx prisma@5.22.0 migrate dev --name init --schema packages/shared/prisma/schema.prisma",
-    "check:aws": "bun run packages/shared/scripts/check-aws.ts"
+    "check:aws": "bun run packages/shared/scripts/check-aws.ts",
+    "seed:tenant": "bun run packages/shared/scripts/seed-tenant.ts",
+    "post:event": "bun run packages/shared/scripts/post-event.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

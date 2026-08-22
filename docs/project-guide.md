@@ -125,11 +125,12 @@ Work one phase at a time. Propose a file plan before writing code. Keep the laye
 - [x] AWS credentials in `.env`; `bun run check:aws` reaches the project SQS queue and S3 bucket
 - Notes: `docs/PHASE_0_NOTES.md`
 
-### Phase 1 — Ingestion API + Outbox
-- Tenants, Events, Deliveries, Outbox tables.
-- `POST /events`: validates payload, writes Event + Outbox row in one DB transaction. If payload > 256KB, upload to S3 first and store the key instead of the JSON.
-- **Concept learned:** outbox pattern, and the claim-check pattern for oversized messages.
-- **Done when:** you can POST a small event and a large (>256KB) event, and see the right shape of row in Postgres for each.
+### Phase 1 — Ingestion API + Outbox — in progress
+
+- [x] Layered `POST /events` writes Event + Outbox in one DB transaction
+- [x] Small payload stored inline (`storedIn: "postgres"`)
+- [ ] Payload > 256KB stored via S3 claim-check
+- Notes: `docs/PHASE_1_NOTES.md`
 
 ### Phase 2 — Outbox Poller + Basic Delivery Worker
 - A poller reads unpublished outbox rows, sends them to SQS (`SendMessage`), marks them published.
