@@ -125,11 +125,11 @@ Work one phase at a time. Propose a file plan before writing code. Keep the laye
 - [x] AWS credentials in `.env`; `bun run check:aws` reaches the project SQS queue and S3 bucket
 - Notes: `docs/PHASE_0_NOTES.md`
 
-### Phase 1 — Ingestion API + Outbox — in progress
+### Phase 1 - Ingestion API + Outbox - complete
 
 - [x] Layered `POST /events` writes Event + Outbox in one DB transaction
 - [x] Small payload stored inline (`storedIn: "postgres"`)
-- [ ] Payload > 256KB stored via S3 claim-check
+- [x] Payload > 256KB stored via S3 claim-check (`payload` null, `payloadS3Key` set)
 - Notes: `docs/PHASE_1_NOTES.md`
 
 ### Phase 2 — Outbox Poller + Basic Delivery Worker
