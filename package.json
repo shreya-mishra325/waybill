@@ -14,6 +14,7 @@
     "post:event": "bun run packages/shared/scripts/post-event.ts",
     "post:event:large": "bun run packages/shared/scripts/post-event.ts --large",
     "dev:receiver": "bun run --watch packages/shared/scripts/test-receiver.ts",
+    "dev:poller": "bun run --watch packages/worker/src/outbox-poller.ts",
     "ping:receiver": "bun run packages/shared/scripts/ping-receiver.ts"
   },
   "devDependencies": {

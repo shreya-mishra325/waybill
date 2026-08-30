@@ -132,12 +132,19 @@ Work one phase at a time. Propose a file plan before writing code. Keep the laye
 - [x] Payload > 256KB stored via S3 claim-check (`payload` null, `payloadS3Key` set)
 - Notes: `docs/PHASE_1_NOTES.md`
 
-### Phase 2 — Outbox Poller + Basic Delivery Worker
-- A poller reads unpublished outbox rows, sends them to SQS (`SendMessage`), marks them published.
-- Worker long-polls SQS (`ReceiveMessage` with wait time), does a plain HTTP POST to a test receiver, marks delivery `SUCCEEDED`/`FAILED`, deletes the message on success.
-- **No retries yet** — prove the pipe works end-to-end first.
-- **Leader election (run this as a deliberate mini-exercise, not just code):** run two instances of the outbox poller locally and watch them double-publish every row. Fix it with `pg_try_advisory_lock` in Postgres — only the instance holding the lock polls; the other stands by and takes over if the leader dies. This is the same *idea* as Raft/Paxos leader election (exactly one active coordinator, automatic failover), just implemented with a primitive Postgres already gives you instead of a consensus library. Write down in your phase notes what would break if two instances ever *did* both think they were leader — that's the part interviewers actually probe.
-- **Done when:** an event posted to your API results in a real HTTP call to your test receiver, the SQS message is deleted only on confirmed success, and running two poller instances at once produces exactly one publish per row, not two.
+### Phase 2 - Outbox Poller + Basic Delivery Worker - in progress
+
+- [x] Test receiver on `:4000`
+- [x] Outbox poller publishes unpublished rows to SQS
+- [ ] Worker long-polls SQS and POSTs to the receiver
+- [ ] Two pollers: `pg_try_advisory_lock` so each row publishes once
+- Notes: `docs/PHASE_2_NOTES.md` (after the phase checkpoint)
+
+A poller reads unpublished outbox rows, sends them to SQS (`SendMessage`), marks them published. The worker long-polls SQS, POSTs to a test receiver, marks delivery succeeded or failed, and deletes the SQS message only on success. No retries yet.
+
+Leader election is a deliberate exercise later in this phase: two poller instances, then `pg_try_advisory_lock` so only one publishes.
+
+Done when: a POSTed event becomes a real HTTP call on the receiver, the SQS message is deleted only after success, and two pollers produce one publish per row.
 
 ### Phase 3 — Retries with Backoff + Dead Letter
 - On failure, don't delete the SQS message — let its visibility timeout expire so it's redelivered, but track attempt count yourself (SQS `ApproximateReceiveCount` or your own DB counter) and apply exponential backoff + jitter before actually retrying.
