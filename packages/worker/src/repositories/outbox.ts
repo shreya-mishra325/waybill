@@ -1,9 +1,12 @@
-import { prisma, type Event, type Outbox } from "@waybill/shared";
+import type { PrismaClient, Event, Outbox } from "@waybill/shared";
 
 export type UnpublishedOutbox = Outbox & { event: Event };
 
-export function listUnpublished(limit: number): Promise<UnpublishedOutbox[]> {
-  return prisma.outbox.findMany({
+export function listUnpublished(
+  db: PrismaClient,
+  limit: number,
+): Promise<UnpublishedOutbox[]> {
+  return db.outbox.findMany({
     where: { published: false },
     include: { event: true },
     orderBy: { createdAt: "asc" },
@@ -11,8 +14,11 @@ export function listUnpublished(limit: number): Promise<UnpublishedOutbox[]> {
   });
 }
 
-export function markPublished(id: string): Promise<{ count: number }> {
-  return prisma.outbox.updateMany({
+export function markPublished(
+  db: PrismaClient,
+  id: string,
+): Promise<{ count: number }> {
+  return db.outbox.updateMany({
     where: { id, published: false },
     data: { published: true, publishedAt: new Date() },
   });

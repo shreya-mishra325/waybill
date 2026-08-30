@@ -132,17 +132,17 @@ Work one phase at a time. Propose a file plan before writing code. Keep the laye
 - [x] Payload > 256KB stored via S3 claim-check (`payload` null, `payloadS3Key` set)
 - Notes: `docs/PHASE_1_NOTES.md`
 
-### Phase 2 - Outbox Poller + Basic Delivery Worker - in progress
+### Phase 2 - Outbox Poller + Basic Delivery Worker - complete
 
 - [x] Test receiver on `:4000`
 - [x] Outbox poller publishes unpublished rows to SQS
 - [x] Worker long-polls SQS and POSTs to the receiver
-- [ ] Two pollers: `pg_try_advisory_lock` so each row publishes once
-- Notes: `docs/PHASE_2_NOTES.md` (after the phase checkpoint)
+- [x] Two pollers: `pg_try_advisory_lock` so each row publishes once
+- Notes: `docs/PHASE_2_NOTES.md`
 
 A poller reads unpublished outbox rows, sends them to SQS (`SendMessage`), marks them published. The worker long-polls SQS, POSTs to a test receiver, marks delivery succeeded or failed, and deletes the SQS message only on success. No retries yet.
 
-Leader election is a deliberate exercise later in this phase: two poller instances, then `pg_try_advisory_lock` so only one publishes.
+Leader election: `pg_try_advisory_lock` on a single Postgres connection. Only the lock holder polls. The standby takes over if the leader disconnects.
 
 Done when: a POSTed event becomes a real HTTP call on the receiver, the SQS message is deleted only after success, and two pollers produce one publish per row.
 

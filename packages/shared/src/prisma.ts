@@ -18,3 +18,13 @@ export const prisma = new PrismaClient({
     db: { url: databaseUrl() },
   },
 });
+
+export function createSingleConnectionPrisma(): PrismaClient {
+  const parsed = new URL(databaseUrl());
+  parsed.searchParams.set("connection_limit", "1");
+  return new PrismaClient({
+    datasources: {
+      db: { url: parsed.toString() },
+    },
+  });
+}
