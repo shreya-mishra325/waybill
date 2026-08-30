@@ -136,7 +136,7 @@ Work one phase at a time. Propose a file plan before writing code. Keep the laye
 
 - [x] Test receiver on `:4000`
 - [x] Outbox poller publishes unpublished rows to SQS
-- [ ] Worker long-polls SQS and POSTs to the receiver
+- [x] Worker long-polls SQS and POSTs to the receiver
 - [ ] Two pollers: `pg_try_advisory_lock` so each row publishes once
 - Notes: `docs/PHASE_2_NOTES.md` (after the phase checkpoint)
 
