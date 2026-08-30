@@ -12,7 +12,9 @@
     "check:aws": "bun run packages/shared/scripts/check-aws.ts",
     "seed:tenant": "bun run packages/shared/scripts/seed-tenant.ts",
     "post:event": "bun run packages/shared/scripts/post-event.ts",
-    "post:event:large": "bun run packages/shared/scripts/post-event.ts --large"
+    "post:event:large": "bun run packages/shared/scripts/post-event.ts --large",
+    "dev:receiver": "bun run --watch packages/shared/scripts/test-receiver.ts",
+    "ping:receiver": "bun run packages/shared/scripts/ping-receiver.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.4"
