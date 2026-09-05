@@ -149,7 +149,7 @@ Done when: a POSTed event becomes a real HTTP call on the receiver, the SQS mess
 ### Phase 3 - Retries with Backoff + Dead Letter - in progress
 
 - [x] `dead_letters` table (payload archived at `payload_s3_key`)
-- [ ] Exponential backoff + jitter before retrying a failed delivery
+- [x] Exponential backoff + jitter before retrying a failed delivery
 - [ ] After N attempts, delete from SQS and write a dead-letter row
 - Notes: `docs/PHASE_3_NOTES.md` (after the phase checkpoint)
 

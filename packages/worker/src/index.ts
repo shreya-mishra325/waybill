@@ -1,4 +1,5 @@
 import {
+  ChangeMessageVisibilityCommand,
   DeleteMessageCommand,
   ReceiveMessageCommand,
   type Message,
@@ -9,8 +10,10 @@ import {
   createSqsClient,
   type QueueMessage,
 } from "@waybill/shared";
+import { nextAttemptAt, visibilityTimeoutSeconds } from "./delivery/backoff";
 import { postWebhook } from "./delivery/http";
 import {
+  findByEventAndUrl,
   markFailed,
   markSucceeded,
   upsertInFlight,
@@ -100,6 +103,40 @@ async function loadPayload(
   return JSON.parse(text);
 }
 
+async function hideUntil(
+  queueUrl: string,
+  receipt: string,
+  delayMs: number,
+): Promise<void> {
+  const sqs = createSqsClient();
+  await sendWithTimeout(
+    (abortSignal) =>
+      sqs.send(
+        new ChangeMessageVisibilityCommand({
+          QueueUrl: queueUrl,
+          ReceiptHandle: receipt,
+          VisibilityTimeout: visibilityTimeoutSeconds(delayMs),
+        }),
+        { abortSignal },
+      ),
+    "SQS ChangeMessageVisibility",
+  );
+}
+
+async function scheduleRetry(
+  deliveryId: string,
+  attemptCount: number,
+  error: string,
+  queueUrl: string,
+  receipt: string,
+): Promise<Date> {
+  const when = nextAttemptAt(attemptCount);
+  const delayMs = Math.max(when.getTime() - Date.now(), 1000);
+  await markFailed(deliveryId, error, when);
+  await hideUntil(queueUrl, receipt, delayMs);
+  return when;
+}
+
 async function handleMessage(
   queueUrl: string,
   targetUrl: string,
@@ -130,6 +167,17 @@ async function handleMessage(
     return;
   }
 
+  const existing = await findByEventAndUrl(parsed.eventId, targetUrl);
+  if (existing?.nextAttemptAt && existing.nextAttemptAt.getTime() > Date.now()) {
+    const delayMs = existing.nextAttemptAt.getTime() - Date.now();
+    await hideUntil(queueUrl, receipt, delayMs);
+    console.log("delivery not due yet, hid SQS message", {
+      eventId: parsed.eventId,
+      nextAttemptAt: existing.nextAttemptAt.toISOString(),
+    });
+    return;
+  }
+
   const delivery = await upsertInFlight({
     eventId: parsed.eventId,
     tenantId: parsed.tenantId,
@@ -141,10 +189,17 @@ async function handleMessage(
     payload = await loadPayload(parsed);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    await markFailed(delivery.id, error);
-    console.error("payload load failed, leaving SQS message", {
+    const when = await scheduleRetry(
+      delivery.id,
+      delivery.attemptCount,
+      error,
+      queueUrl,
+      receipt,
+    );
+    console.error("payload load failed, scheduled retry", {
       eventId: parsed.eventId,
       error,
+      nextAttemptAt: when.toISOString(),
     });
     return;
   }
@@ -157,10 +212,18 @@ async function handleMessage(
   });
 
   if (!result.ok) {
-    await markFailed(delivery.id, result.error);
-    console.error("delivery failed, leaving SQS message", {
+    const when = await scheduleRetry(
+      delivery.id,
+      delivery.attemptCount,
+      result.error,
+      queueUrl,
+      receipt,
+    );
+    console.error("delivery failed, scheduled retry", {
       eventId: parsed.eventId,
+      attemptCount: delivery.attemptCount,
       error: result.error,
+      nextAttemptAt: when.toISOString(),
     });
     return;
   }

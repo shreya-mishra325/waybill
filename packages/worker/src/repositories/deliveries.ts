@@ -1,5 +1,14 @@
 import { prisma, type Delivery } from "@waybill/shared";
 
+export function findByEventAndUrl(
+  eventId: string,
+  targetUrl: string,
+): Promise<Delivery | null> {
+  return prisma.delivery.findFirst({
+    where: { eventId, targetUrl },
+  });
+}
+
 export async function upsertInFlight(input: {
   eventId: string;
   tenantId: string;
@@ -17,6 +26,7 @@ export async function upsertInFlight(input: {
         attemptCount: { increment: 1 },
         lastAttemptAt: new Date(),
         lastError: null,
+        nextAttemptAt: null,
       },
     });
   }
@@ -40,9 +50,17 @@ export function markSucceeded(id: string): Promise<Delivery> {
   });
 }
 
-export function markFailed(id: string, error: string): Promise<Delivery> {
+export function markFailed(
+  id: string,
+  error: string,
+  nextAttempt: Date,
+): Promise<Delivery> {
   return prisma.delivery.update({
     where: { id },
-    data: { status: "FAILED", lastError: error.slice(0, 500) },
+    data: {
+      status: "FAILED",
+      lastError: error.slice(0, 500),
+      nextAttemptAt: nextAttempt,
+    },
   });
 }
