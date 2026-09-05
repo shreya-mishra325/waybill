@@ -64,3 +64,17 @@ export function markFailed(
     },
   });
 }
+
+export function markDeadLettered(
+  id: string,
+  error: string,
+): Promise<Delivery> {
+  return prisma.delivery.update({
+    where: { id },
+    data: {
+      status: "DEAD_LETTERED",
+      lastError: error.slice(0, 500),
+      nextAttemptAt: null,
+    },
+  });
+}

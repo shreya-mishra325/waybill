@@ -146,12 +146,12 @@ Leader election: `pg_try_advisory_lock` on a single Postgres connection. Only th
 
 Done when: a POSTed event becomes a real HTTP call on the receiver, the SQS message is deleted only after success, and two pollers produce one publish per row.
 
-### Phase 3 - Retries with Backoff + Dead Letter - in progress
+### Phase 3 - Retries with Backoff + Dead Letter - complete
 
 - [x] `dead_letters` table (payload archived at `payload_s3_key`)
 - [x] Exponential backoff + jitter before retrying a failed delivery
-- [ ] After N attempts, delete from SQS and write a dead-letter row
-- Notes: `docs/PHASE_3_NOTES.md` (after the phase checkpoint)
+- [x] After N attempts, delete from SQS and write a dead-letter row
+- Notes: `docs/PHASE_3_NOTES.md`
 
 On failure, do not delete the SQS message. Let visibility expire so it is redelivered. Track attempts on `deliveries` and wait with exponential backoff plus jitter. After `MAX_DELIVERY_ATTEMPTS`, delete from SQS, archive the payload to S3 if needed, and insert `dead_letters`.
 

@@ -4,16 +4,22 @@ import {
   ReceiveMessageCommand,
   type Message,
 } from "@aws-sdk/client-sqs";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import {
   createS3Client,
   createSqsClient,
   type QueueMessage,
 } from "@waybill/shared";
-import { nextAttemptAt, visibilityTimeoutSeconds } from "./delivery/backoff";
+import {
+  isExhausted,
+  nextAttemptAt,
+  visibilityTimeoutSeconds,
+} from "./delivery/backoff";
 import { postWebhook } from "./delivery/http";
+import { createDeadLetter } from "./repositories/dead-letters";
 import {
   findByEventAndUrl,
+  markDeadLettered,
   markFailed,
   markSucceeded,
   upsertInFlight,
@@ -123,6 +129,69 @@ async function hideUntil(
   );
 }
 
+async function archivePayload(message: QueueMessage): Promise<string> {
+  if (message.payloadS3Key) {
+    return message.payloadS3Key;
+  }
+
+  const key = `dead-letters/${message.eventId}.json`;
+  const s3 = createS3Client();
+  await sendWithTimeout(
+    (abortSignal) =>
+      s3.send(
+        new PutObjectCommand({
+          Bucket: requireEnv("S3_BUCKET_NAME"),
+          Key: key,
+          Body: JSON.stringify(message.payload),
+          ContentType: "application/json",
+        }),
+        { abortSignal },
+      ),
+    "S3 PutObject",
+  );
+  return key;
+}
+
+async function moveToDeadLetter(
+  delivery: { id: string; eventId: string; tenantId: string; attemptCount: number },
+  targetUrl: string,
+  error: string,
+  message: QueueMessage,
+  queueUrl: string,
+  receipt: string,
+): Promise<void> {
+  const payloadS3Key = await archivePayload(message);
+  await createDeadLetter({
+    eventId: delivery.eventId,
+    deliveryId: delivery.id,
+    tenantId: delivery.tenantId,
+    targetUrl,
+    lastError: error.slice(0, 500),
+    attemptCount: delivery.attemptCount,
+    payloadS3Key,
+  });
+  await markDeadLettered(delivery.id, error);
+
+  const sqs = createSqsClient();
+  await sendWithTimeout(
+    (abortSignal) =>
+      sqs.send(
+        new DeleteMessageCommand({
+          QueueUrl: queueUrl,
+          ReceiptHandle: receipt,
+        }),
+        { abortSignal },
+      ),
+    "SQS DeleteMessage",
+  );
+  console.log("delivery dead-lettered", {
+    eventId: delivery.eventId,
+    deliveryId: delivery.id,
+    attemptCount: delivery.attemptCount,
+    payloadS3Key,
+  });
+}
+
 async function scheduleRetry(
   deliveryId: string,
   attemptCount: number,
@@ -168,6 +237,23 @@ async function handleMessage(
   }
 
   const existing = await findByEventAndUrl(parsed.eventId, targetUrl);
+  if (existing?.status === "DEAD_LETTERED") {
+    await sendWithTimeout(
+      (abortSignal) =>
+        sqs.send(
+          new DeleteMessageCommand({
+            QueueUrl: queueUrl,
+            ReceiptHandle: receipt,
+          }),
+          { abortSignal },
+        ),
+      "SQS DeleteMessage",
+    );
+    console.log("delivery already dead-lettered, deleted SQS message", {
+      eventId: parsed.eventId,
+    });
+    return;
+  }
   if (existing?.nextAttemptAt && existing.nextAttemptAt.getTime() > Date.now()) {
     const delayMs = existing.nextAttemptAt.getTime() - Date.now();
     await hideUntil(queueUrl, receipt, delayMs);
@@ -189,6 +275,17 @@ async function handleMessage(
     payload = await loadPayload(parsed);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
+    if (isExhausted(delivery.attemptCount)) {
+      await moveToDeadLetter(
+        delivery,
+        targetUrl,
+        error,
+        parsed,
+        queueUrl,
+        receipt,
+      );
+      return;
+    }
     const when = await scheduleRetry(
       delivery.id,
       delivery.attemptCount,
@@ -212,6 +309,17 @@ async function handleMessage(
   });
 
   if (!result.ok) {
+    if (isExhausted(delivery.attemptCount)) {
+      await moveToDeadLetter(
+        delivery,
+        targetUrl,
+        result.error,
+        parsed,
+        queueUrl,
+        receipt,
+      );
+      return;
+    }
     const when = await scheduleRetry(
       delivery.id,
       delivery.attemptCount,
