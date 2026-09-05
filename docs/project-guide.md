@@ -146,10 +146,16 @@ Leader election: `pg_try_advisory_lock` on a single Postgres connection. Only th
 
 Done when: a POSTed event becomes a real HTTP call on the receiver, the SQS message is deleted only after success, and two pollers produce one publish per row.
 
-### Phase 3 — Retries with Backoff + Dead Letter
-- On failure, don't delete the SQS message — let its visibility timeout expire so it's redelivered, but track attempt count yourself (SQS `ApproximateReceiveCount` or your own DB counter) and apply exponential backoff + jitter before actually retrying.
-- After N attempts, delete from SQS and move to a Postgres dead-letter table, archiving the payload to S3 if it isn't already there.
-- **Done when:** you can see attempt timestamps growing exponentially, and exhausted events land in the DLQ table with their payload retrievable from S3.
+### Phase 3 - Retries with Backoff + Dead Letter - in progress
+
+- [x] `dead_letters` table (payload archived at `payload_s3_key`)
+- [ ] Exponential backoff + jitter before retrying a failed delivery
+- [ ] After N attempts, delete from SQS and write a dead-letter row
+- Notes: `docs/PHASE_3_NOTES.md` (after the phase checkpoint)
+
+On failure, do not delete the SQS message. Let visibility expire so it is redelivered. Track attempts on `deliveries` and wait with exponential backoff plus jitter. After `MAX_DELIVERY_ATTEMPTS`, delete from SQS, archive the payload to S3 if needed, and insert `dead_letters`.
+
+Done when: attempt timestamps grow exponentially, and exhausted events land in `dead_letters` with the payload retrievable from S3.
 
 ### Phase 4 — Circuit Breaker
 - Redis-backed circuit breaker keyed by destination URL: closed → open (after N consecutive failures) → half-open (test one request) → closed/open again. Checked by the worker *before* every delivery attempt, independent of SQS.

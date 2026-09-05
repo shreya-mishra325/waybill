@@ -36,6 +36,7 @@ model Event {
   tenant      Tenant     @relation(fields: [tenantId], references: [id])
   deliveries  Delivery[]
   outbox      Outbox?
+  deadLetters DeadLetter[]
 
   @@index([tenantId])
   @@map("events")
@@ -57,6 +58,7 @@ model Delivery {
 
   event         Event     @relation(fields: [eventId], references: [id])
   tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  deadLetter    DeadLetter?
 
   @@index([tenantId, status])
   @@map("deliveries")
@@ -83,4 +85,22 @@ model Outbox {
 
   @@index([published])
   @@map("outbox")
+}
+
+model DeadLetter {
+  id           String   @id @default(uuid())
+  eventId      String   @map("event_id")
+  deliveryId   String   @unique @map("delivery_id")
+  tenantId     String   @map("tenant_id")
+  targetUrl    String   @map("target_url")
+  lastError    String?  @map("last_error")
+  attemptCount Int      @map("attempt_count")
+  payloadS3Key String   @map("payload_s3_key")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  event        Event    @relation(fields: [eventId], references: [id])
+  delivery     Delivery @relation(fields: [deliveryId], references: [id])
+
+  @@index([tenantId])
+  @@map("dead_letters")
 }
