@@ -6,6 +6,7 @@ import {
   createOutbox,
   findTenantById,
 } from "../repositories/events";
+import { enforceIngestionRateLimit } from "../rate-limit";
 
 const DEFAULT_SQS_MAX_MESSAGE_BYTES = 262144;
 const S3_TIMEOUT_MS = 15_000;
@@ -102,6 +103,8 @@ export async function ingestEvent(input: unknown): Promise<IngestedEvent> {
   if (!tenant) {
     throw new TenantNotFoundError(tenantId);
   }
+
+  await enforceIngestionRateLimit(tenantId);
 
   const eventId = crypto.randomUUID();
   const json = JSON.stringify(payload);
