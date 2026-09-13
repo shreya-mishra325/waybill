@@ -15,6 +15,14 @@ import {
   nextAttemptAt,
   visibilityTimeoutSeconds,
 } from "./delivery/backoff";
+import {
+  circuitKeyForTarget,
+  createRedisClient,
+  getCircuitDecision,
+  readCircuitState,
+  recordDeliveryFailure,
+  recordDeliverySuccess,
+} from "./delivery/circuit-breaker";
 import { postWebhook } from "./delivery/http";
 import { createDeadLetter } from "./repositories/dead-letters";
 import {
@@ -210,11 +218,26 @@ async function handleMessage(
   queueUrl: string,
   targetUrl: string,
   sqsMessage: Message,
+  redis = createRedisClient(),
 ): Promise<void> {
   const sqs = createSqsClient();
   const receipt = sqsMessage.ReceiptHandle;
   if (!receipt) {
     throw new Error("SQS message missing ReceiptHandle");
+  }
+
+  const breaker = await readCircuitState(redis, targetUrl);
+  const decision = getCircuitDecision(breaker, Date.now());
+  if (!decision.allowed) {
+    const delayMs = Math.max(decision.delayMs, 1000);
+    await hideUntil(queueUrl, receipt, delayMs);
+    console.log("destination circuit open, message hidden until cooldown expires", {
+      messageId: sqsMessage.MessageId,
+      targetUrl,
+      state: decision.state,
+      delayMs,
+    });
+    return;
   }
 
   const parsed = parseQueueMessage(sqsMessage.Body ?? "");
@@ -264,6 +287,12 @@ async function handleMessage(
     return;
   }
 
+  if (decision.state === "half-open") {
+    await redis.hset(circuitKeyForTarget(targetUrl), {
+      halfOpenInFlight: "true",
+    });
+  }
+
   const delivery = await upsertInFlight({
     eventId: parsed.eventId,
     tenantId: parsed.tenantId,
@@ -309,6 +338,13 @@ async function handleMessage(
   });
 
   if (!result.ok) {
+    const afterFailure = await recordDeliveryFailure(redis, targetUrl);
+    if (afterFailure.state === "open") {
+      console.warn("destination circuit opened", {
+        targetUrl,
+        failureCount: afterFailure.failureCount,
+      });
+    }
     if (isExhausted(delivery.attemptCount)) {
       await moveToDeadLetter(
         delivery,
@@ -332,10 +368,12 @@ async function handleMessage(
       attemptCount: delivery.attemptCount,
       error: result.error,
       nextAttemptAt: when.toISOString(),
+      circuitState: afterFailure.state,
     });
     return;
   }
 
+  const afterSuccess = await recordDeliverySuccess(redis, targetUrl);
   await markSucceeded(delivery.id);
   await sendWithTimeout(
     (abortSignal) =>
@@ -351,6 +389,7 @@ async function handleMessage(
   console.log("delivery succeeded", {
     eventId: parsed.eventId,
     deliveryId: delivery.id,
+    circuitState: afterSuccess.state,
   });
 }
 
@@ -358,6 +397,8 @@ async function main(): Promise<void> {
   const queueUrl = requireEnv("SQS_QUEUE_URL");
   const targetUrl = requireEnv("RECEIVER_URL");
   const sqs = createSqsClient();
+  const redis = createRedisClient();
+  await redis.connect();
 
   console.log("delivery worker started");
 
@@ -381,7 +422,7 @@ async function main(): Promise<void> {
       const messages = received.Messages ?? [];
       for (const message of messages) {
         try {
-          await handleMessage(queueUrl, targetUrl, message);
+          await handleMessage(queueUrl, targetUrl, message, redis);
         } catch (err) {
           console.error("handle message failed", {
             messageId: message.MessageId,

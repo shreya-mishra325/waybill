@@ -7,7 +7,7 @@ HTTP events.
 
 Full project guide (architecture, phases, checkpoints, production readiness):
 see `docs/project-guide.md`. Phase notes: `docs/PHASE_0_NOTES.md`,
-`docs/PHASE_1_NOTES.md`, `docs/PHASE_2_NOTES.md`.
+`docs/PHASE_1_NOTES.md`, `docs/PHASE_2_NOTES.md`, `docs/PHASE_4_NOTES.md`.
 Architecture diagram: `docs/waybill-architecture.pdf`
 
 ## Quick start
@@ -17,11 +17,11 @@ Requires [Bun](https://bun.sh) and a free-tier AWS account (SQS + S3).
 ```bash
 cp .env.example .env
 
-docker-compose up -d postgres redis     # Postgres + Redis only — SQS/S3 are real AWS
+docker-compose up -d postgres redis     
 bun install
 bun run prisma:migrate
-bun run dev:api       # starts the ingestion API on :3000
-bun run dev:worker    # starts the delivery worker
+bun run dev:api       
+bun run dev:worker    
 ```
 
 Check `GET http://localhost:3000/health` — you should get `{ "status": "ok" }`.
