@@ -14,6 +14,7 @@ Phase 3 proved the worker could retry and dead-letter failed deliveries. Phase 4
 
 - `bun test packages/worker/src/delivery/circuit-breaker.test.ts` passes with 3/3 tests green.
 - `bunx tsc -p packages/worker/tsconfig.json --noEmit` exits successfully.
+- End-to-end: stopping the receiver opened the circuit after five failures, hid further messages during the 30-second cooldown, and delivery succeeded after the receiver restarted and the circuit probed recovery.
 
 ## What I learned
 

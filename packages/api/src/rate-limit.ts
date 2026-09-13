@@ -32,6 +32,21 @@ function redisClient(): Redis {
   return client;
 }
 
+async function readyRedisClient(): Promise<Redis> {
+  const current = redisClient();
+  if (current.status === "wait") {
+    await current.connect();
+    return current;
+  }
+  if (current.status !== "ready") {
+    await new Promise<void>((resolve, reject) => {
+      current.once("ready", resolve);
+      current.once("error", reject);
+    });
+  }
+  return current;
+}
+
 export class IngestionRateLimitError extends Error {
   readonly retryAfterMs: number;
 
@@ -46,7 +61,7 @@ export async function enforceIngestionRateLimit(
   tenantId: string,
 ): Promise<TokenBucketDecision> {
   const decision = await consumeTenantToken(
-    redisClient(),
+    await readyRedisClient(),
     tenantId,
     rateLimitConfig(),
   );

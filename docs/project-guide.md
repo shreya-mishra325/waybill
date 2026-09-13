@@ -123,14 +123,14 @@ Work one phase at a time. Propose a file plan before writing code. Keep the laye
 - [x] Monorepo, Docker Compose (Postgres + Redis), Prisma schema + first migration
 - [x] Empty API returns 200 on `GET /health`
 - [x] AWS credentials in `.env`; `bun run check:aws` reaches the project SQS queue and S3 bucket
-- Notes: `docs/PHASE_0_NOTES.md`
+- [x] Notes: `docs/PHASE_0_NOTES.md`
 
 ### Phase 1 - Ingestion API + Outbox - complete
 
 - [x] Layered `POST /events` writes Event + Outbox in one DB transaction
 - [x] Small payload stored inline (`storedIn: "postgres"`)
 - [x] Payload > 256KB stored via S3 claim-check (`payload` null, `payloadS3Key` set)
-- Notes: `docs/PHASE_1_NOTES.md`
+- [x] Notes: `docs/PHASE_1_NOTES.md`
 
 ### Phase 2 - Outbox Poller + Basic Delivery Worker - complete
 
@@ -138,7 +138,7 @@ Work one phase at a time. Propose a file plan before writing code. Keep the laye
 - [x] Outbox poller publishes unpublished rows to SQS
 - [x] Worker long-polls SQS and POSTs to the receiver
 - [x] Two pollers: `pg_try_advisory_lock` so each row publishes once
-- Notes: `docs/PHASE_2_NOTES.md`
+- [x] Notes: `docs/PHASE_2_NOTES.md`
 
 A poller reads unpublished outbox rows, sends them to SQS (`SendMessage`), marks them published. The worker long-polls SQS, POSTs to a test receiver, marks delivery succeeded or failed, and deletes the SQS message only on success. No retries yet.
 
@@ -151,7 +151,7 @@ Done when: a POSTed event becomes a real HTTP call on the receiver, the SQS mess
 - [x] `dead_letters` table (payload archived at `payload_s3_key`)
 - [x] Exponential backoff + jitter before retrying a failed delivery
 - [x] After N attempts, delete from SQS and write a dead-letter row
-- Notes: `docs/PHASE_3_NOTES.md`
+- [x] Notes: `docs/PHASE_3_NOTES.md`
 
 On failure, do not delete the SQS message. Let visibility expire so it is redelivered. Track attempts on `deliveries` and wait with exponential backoff plus jitter. After `MAX_DELIVERY_ATTEMPTS`, delete from SQS, archive the payload to S3 if needed, and insert `dead_letters`.
 
@@ -159,8 +159,8 @@ Done when: attempt timestamps grow exponentially, and exhausted events land in `
 
 ### Phase 4 — Circuit Breaker
 - [x] Redis-backed circuit breaker keyed by destination URL: closed → open (after N consecutive failures) → half-open (test one request) → closed/open again. Checked by the worker *before* every delivery attempt, independent of SQS.
-- [ ] Killing the test receiver causes the worker to stop attempting delivery for a cooldown window instead of retrying constantly, then automatically probes again.
-- Notes: `docs/PHASE_4_NOTES.md`
+- [x] Killing the test receiver causes the worker to stop attempting delivery for a cooldown window instead of retrying constantly, then automatically probes again.
+- [x] Notes: `docs/PHASE_4_NOTES.md`
 
 ### Phase 5 — Rate Limiting & Multi-Tenant Fairness
 - [x] Token bucket per tenant in Redis, applied at ingestion (`POST /events`) and at dispatch (worker skips over-limit tenants' messages instead of blocking).
