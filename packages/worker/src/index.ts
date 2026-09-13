@@ -24,6 +24,7 @@ import {
   recordDeliverySuccess,
 } from "./delivery/circuit-breaker";
 import { postWebhook } from "./delivery/http";
+import { consumeTenantToken } from "./delivery/rate-limiter";
 import { createDeadLetter } from "./repositories/dead-letters";
 import {
   findByEventAndUrl,
@@ -43,6 +44,18 @@ function requireEnv(name: string): string {
     throw new Error(`Missing required env var: ${name}`);
   }
   return value;
+}
+
+function workerRateLimitConfig(): {
+  capacity: number;
+  refillPerSecond: number;
+} {
+  return {
+    capacity: Number(process.env.DELIVERY_RATE_LIMIT_CAPACITY ?? 10),
+    refillPerSecond: Number(
+      process.env.DELIVERY_RATE_LIMIT_REFILL_PER_SECOND ?? 10,
+    ),
+  };
 }
 
 async function sendWithTimeout<T>(
@@ -256,6 +269,22 @@ async function handleMessage(
         ),
       "SQS DeleteMessage",
     );
+    return;
+  }
+
+  const rateLimit = await consumeTenantToken(
+    redis,
+    parsed.tenantId,
+    workerRateLimitConfig(),
+  );
+  if (!rateLimit.allowed) {
+    const delayMs = Math.max(rateLimit.retryAfterMs, 1000);
+    await hideUntil(queueUrl, receipt, delayMs);
+    console.log("tenant rate limit exceeded, message hidden", {
+      eventId: parsed.eventId,
+      tenantId: parsed.tenantId,
+      delayMs,
+    });
     return;
   }
 
