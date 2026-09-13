@@ -157,9 +157,10 @@ On failure, do not delete the SQS message. Let visibility expire so it is redeli
 
 Done when: attempt timestamps grow exponentially, and exhausted events land in `dead_letters` with the payload retrievable from S3.
 
-### Phase 4 — Circuit Breaker
+### Phase 4 — Circuit Breaker — complete
 - Redis-backed circuit breaker keyed by destination URL: closed → open (after N consecutive failures) → half-open (test one request) → closed/open again. Checked by the worker *before* every delivery attempt, independent of SQS.
-- **Done when:** killing your test receiver causes the worker to stop attempting delivery for a cooldown window instead of retrying constantly, then automatically probes again.
+- [x] Killing the test receiver causes the worker to stop attempting delivery for a cooldown window instead of retrying constantly, then automatically probes again.
+- Notes: `docs/PHASE_4_NOTES.md`
 
 ### Phase 5 — Rate Limiting & Multi-Tenant Fairness
 - Token bucket per tenant in Redis, applied at ingestion (`POST /events`) and at dispatch (worker skips over-limit tenants' messages instead of blocking).
