@@ -39,43 +39,33 @@ Measured against a standard system design checklist (load balancing, caching, ra
 
 ## 3. High-Level Architecture
 
-```
-                         ┌─────────────────────┐
-   Tenant's backend ───► │   Ingestion API      │  validates event, writes outbox row
-                         └──────────┬───────────┘
-                                    │ writes atomically (same DB txn)
-                                    ▼
-                         ┌─────────────────────┐
-                         │   Postgres           │  tenants, events, deliveries, outbox
-                         └──────────┬───────────┘
-                                    │ outbox poller publishes
-                                    ▼
-                    payload > 256KB?  ──yes──►  S3 (payload stored, key referenced)
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │  Amazon SQS          │  standard queue, tenantId as message attribute
-                         └──────────┬───────────┘
-                                    ▼
-                         ┌─────────────────────┐
-                         │  Delivery Workers     │  long-poll SQS, check Redis rate limit +
-                         │                       │  circuit breaker before every attempt
-                         └──────────┬───────────┘
-                        success │        │ failure
-                                ▼        ▼
-                        mark delivered   retry (exp backoff + jitter, re-published to SQS)
-                                              │
-                                     exhausted retries
-                                              ▼
-                                     Dead Letter (Postgres table, payload archived to S3)
-                                              │
-                                              ▼
-                                   Manual replay via Dashboard/API
+The [target architecture](./waybill-architecture.md) is the detailed Mermaid design for Phases 0–8, including signing, dashboard/replay, and the read replica. It also maps components to repository paths and distinguishes implemented behavior from planned work. The Excalidraw board and PDF are earlier Phases 0–5 snapshots.
 
-   Redis holds: per-tenant rate-limit token buckets, per-destination-URL circuit
-   breaker state. It is NOT the queue — SQS is, so a crashed worker never loses
-   a message (SQS visibility timeout requeues it automatically).
+```mermaid
+flowchart LR
+  tenant["Tenant backend"] --> api["Ingestion API"]
+  api -->|"Upload oversized payload first"| s3[("S3 payloads / archives")]
+  api -->|"Atomic event + outbox write"| primary[("PostgreSQL primary")]
+  primary -->|"Read unpublished outbox"| poller["Outbox poller"]
+  poller -.->|"Advisory leader lock"| primary
+  poller -->|"Publish then mark outbox"| sqs["Amazon SQS"]
+  sqs -->|"Long-poll"| worker["Delivery workers"]
+  api -.->|"Ingestion limits"| redis[("Redis")]
+  worker -.->|"Dispatch limits / circuit breaker"| redis
+  worker -->|"Load payload / archive dead letters"| s3
+  worker -->|"Signed POST — Phase 6"| receiver["Tenant webhook"]
+  worker -->|"Attempts / outcomes / dead letters"| primary
+  worker -->|"Retry: change visibility; completion: delete"| sqs
+  dashboard["Dashboard — Phase 7"] --> reads["Observability API"]
+  reads -->|"Read-only queries"| replica[("PostgreSQL read replica")]
+  reads -->|"View archived payload"| s3
+  primary -.->|"Replication"| replica
+  dashboard --> replay["Replay API — Phase 7"]
+  replay -->|"Validate and prepare replay"| primary
+  replay -->|"Re-send eligible delivery"| sqs
 ```
+
+The diagram includes planned components. Retries use visibility changes on the existing SQS message, as specified in Phase 3; manual replay is a separate Phase 7 command. Dead-letter handling archives the payload and persists the failure before deleting the queue message. The design provides at-least-once delivery attempts and durable failure records, not a guarantee that a permanently unavailable endpoint will receive an event.
 
 **Why SQS instead of partitioned queues for fairness:** SQS doesn't give you cheap per-tenant physical queues the way Redis lists do. Fairness here is enforced at the *worker* level instead — before attempting delivery, a worker checks that tenant's Redis token bucket. If a tenant is over its limit, the worker skips that message (returns it to SQS without deleting it) and moves to the next one, rather than blocking on that tenant. This is a real trade-off worth understanding, not a shortcut.
 
