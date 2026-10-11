@@ -1,12 +1,12 @@
-# Waybill — Project Guide
+# Waybill - Project Guide
 
-A reliable, multi-tenant webhook delivery platform (like Svix/Stripe's internal dispatcher). Built to learn distributed systems fundamentals by building, not reading. A waybill is the real-world document that travels with a shipment and proves it arrived — same idea here, for HTTP events.
+A multi-tenant webhook delivery platform, built to learn distributed systems. A waybill is the document that travels with a shipment and proves it arrived. This project applies that idea to HTTP events.
 
 ---
 
 ## 1. Problem Statement
 
-Company A's backend needs to notify Company B's server when events happen ("payment.succeeded", "order.shipped"). Company B's endpoint may be slow, down, or flaky. The system must guarantee **every event eventually arrives**, **without losing events**, **without hammering dead endpoints**, and **without one noisy tenant starving others** — across thousands of tenants concurrently.
+Company A's backend needs to notify Company B's server when events happen ("payment.succeeded", "order.shipped"). Company B's endpoint may be slow, down, or flaky. The system must guarantee **every event eventually arrives**, **without losing events**, **without hammering dead endpoints**, and **without one noisy tenant starving others** - across thousands of tenants concurrently.
 
 ---
 
@@ -16,30 +16,30 @@ Company A's backend needs to notify Company B's server when events happen ("paym
 |---|---|---|
 | Language/Runtime | TypeScript on Bun | Runs TS directly (no build step, even in Docker), fast installs/cold starts |
 | API Framework | Express | Simple, well-documented, easy to reason about layer by layer |
-| Database | PostgreSQL | Source of truth — tenants, events, deliveries, outbox |
+| Database | PostgreSQL | Source of truth - tenants, events, deliveries, outbox |
 | ORM | Prisma | Type-safe, migrations built in |
-| Queue | **Amazon SQS** | Real managed queue — long polling, visibility timeouts, at-least-once delivery. Free tier covers this project many times over |
+| Queue | **Amazon SQS** | Real managed queue - long polling, visibility timeouts, at-least-once delivery. Free tier covers this project many times over |
 | Large payload / archive storage | **Amazon S3** | Claim-check pattern: SQS caps messages at 256KB, so payloads over that go to S3 and the queue carries a pointer. Also doubles as a permanent audit archive of delivered/failed payloads |
-| Cache / rate limit / circuit breaker state | **Redis** | Per-tenant token buckets, per-destination circuit breaker state, hot tenant config. Not the queue anymore — SQS is |
+| Cache / rate limit / circuit breaker state | **Redis** | Per-tenant token buckets, per-destination circuit breaker state, hot tenant config. Not the queue anymore - SQS is |
 | Containerization | Docker + docker-compose | Postgres + Redis run locally in containers; SQS/S3 are real AWS, hit directly even from your laptop |
 | Logging | **Pino** | Structured JSON logs, correlation IDs threaded through API → queue → worker |
 | Deployment | Railway or Render → AWS later if desired | Get something live early |
 
-You'll need a free-tier AWS account (SQS + S3 both have generous always-free tiers). Don't add Kafka, gRPC, or Kubernetes on day one — those are Phase 9+ stretch goals, earned after the core system works.
+Local development needs an AWS account for SQS and S3. Start with the core delivery flow. Kafka and other infrastructure experiments can wait until the later phases.
 
 ### What this project does and doesn't teach
 
-Measured against a standard system design checklist (load balancing, caching, rate limiting, replication, sharding, message queues, consensus, service discovery, distributed transactions, CAP/eventual consistency, observability):
+The main topics are:
 
-- **Covered directly, and central to the design:** message queues, caching, rate limiting, eventual consistency (the outbox pattern *is* this), observability (structured logging; metrics as a stretch).
-- **Added deliberately in Phases 2/7/8, even though the core problem doesn't strictly require them, because they're worth the rep:** leader election (Phase 2, via Postgres advisory locks — the same idea as Raft/Paxos, without a consensus library), replication (Phase 7, a Postgres read replica for the dashboard), sharding (Phase 8, only after load testing proves it's needed).
-- **Deliberately not covered, because they don't have an honest home in this problem:** service discovery (Waybill is two services, not a mesh — bolting on Consul/Eureka here would be decoration) and distributed transactions / SAGA (Waybill delivers a message, it doesn't coordinate a multi-step business transaction across services). If you want those for real later, a small order-processing-style project is the more honest way to learn them — don't expect Waybill to fake it.
+- Message queues, caching, rate limiting, eventual consistency through the outbox, and observability through logs and later metrics.
+- Leader election with Postgres advisory locks in Phase 2, a read replica in Phase 7, and sharding in Phase 8 if load tests show a need for it.
+- Service discovery and distributed transactions/SAGAs are out of scope. Waybill does not have a service mesh or coordinate business transactions across services.
 
 ---
 
 ## 3. High-Level Architecture
 
-The [target architecture](./waybill-architecture.md) is the detailed Mermaid design for Phases 0–8, including signing, dashboard/replay, and the read replica. It also maps components to repository paths and distinguishes implemented behavior from planned work. The Excalidraw board and PDF are earlier Phases 0–5 snapshots.
+The [architecture document](./waybill-architecture.md) defines the Phase 0-8 target, component boundaries, repository layout, and implementation status. It includes HMAC signing, observability, replay, and read-replica routing. The PDF is an earlier Phases 0-5 snapshot.
 
 ```mermaid
 flowchart LR
@@ -53,21 +53,21 @@ flowchart LR
   api -.->|"Ingestion limits"| redis[("Redis")]
   worker -.->|"Dispatch limits / circuit breaker"| redis
   worker -->|"Load payload / archive dead letters"| s3
-  worker -->|"Signed POST — Phase 6"| receiver["Tenant webhook"]
+  worker -->|"Signed POST - Phase 6"| receiver["Tenant webhook"]
   worker -->|"Attempts / outcomes / dead letters"| primary
   worker -->|"Retry: change visibility; completion: delete"| sqs
-  dashboard["Dashboard — Phase 7"] --> reads["Observability API"]
+  dashboard["Dashboard - Phase 7"] --> reads["Observability API"]
   reads -->|"Read-only queries"| replica[("PostgreSQL read replica")]
   reads -->|"View archived payload"| s3
   primary -.->|"Replication"| replica
-  dashboard --> replay["Replay API — Phase 7"]
+  dashboard --> replay["Replay API - Phase 7"]
   replay -->|"Validate and prepare replay"| primary
   replay -->|"Re-send eligible delivery"| sqs
 ```
 
-The diagram includes planned components. Retries use visibility changes on the existing SQS message, as specified in Phase 3; manual replay is a separate Phase 7 command. Dead-letter handling archives the payload and persists the failure before deleting the queue message. The design provides at-least-once delivery attempts and durable failure records, not a guarantee that a permanently unavailable endpoint will receive an event.
+HMAC signing, the dashboard, replay, and the read replica are planned. Automatic retries use `ChangeMessageVisibility` on the existing SQS message. Manual replay is a separate Phase 7 operation. On retry exhaustion, the worker archives the payload and persists the dead-letter state before calling `DeleteMessage`. Delivery attempts are at least once; receivers must handle duplicates.
 
-**Why SQS instead of partitioned queues for fairness:** SQS doesn't give you cheap per-tenant physical queues the way Redis lists do. Fairness here is enforced at the *worker* level instead — before attempting delivery, a worker checks that tenant's Redis token bucket. If a tenant is over its limit, the worker skips that message (returns it to SQS without deleting it) and moves to the next one, rather than blocking on that tenant. This is a real trade-off worth understanding, not a shortcut.
+**Tenant fairness:** workers enforce per-tenant Redis token buckets over a shared SQS queue. Rate-limited messages are deferred through visibility changes without blocking dispatch for other tenants. The Phase 5 load test must validate delivery latency under uneven tenant traffic.
 
 ---
 
@@ -101,14 +101,14 @@ waybill/
 
 Work one phase at a time. Propose a file plan before writing code. Keep the layered structure (routes → controllers → services → repositories). Handle every async/AWS call explicitly. Explain *why* a pattern is used in comments, not just what the code does. Runtime is Bun (no build step). TypeScript strict mode.
 
-- After each phase, write your own `PHASE_N_NOTES.md` — what was built and why. This becomes your own system design writeup later.
+- After each phase, write your own `PHASE_N_NOTES.md` - what was built and why. This becomes your own system design writeup later.
 - Commit after every checkpoint, not after every file.
 
 ---
 
 ## 6. Phases & Checkpoints
 
-### Phase 0 — Scaffolding — complete
+### Phase 0 - Scaffolding - complete
 
 - [x] Monorepo, Docker Compose (Postgres + Redis), Prisma schema + first migration
 - [x] Empty API returns 200 on `GET /health`
@@ -147,49 +147,49 @@ On failure, do not delete the SQS message. Let visibility expire so it is redeli
 
 Done when: attempt timestamps grow exponentially, and exhausted events land in `dead_letters` with the payload retrievable from S3.
 
-### Phase 4 — Circuit Breaker
+### Phase 4 - Circuit Breaker
 - [x] Redis-backed circuit breaker keyed by destination URL: closed → open (after N consecutive failures) → half-open (test one request) → closed/open again. Checked by the worker *before* every delivery attempt, independent of SQS.
 - [x] Killing the test receiver causes the worker to stop attempting delivery for a cooldown window instead of retrying constantly, then automatically probes again.
 - [x] Notes: `docs/PHASE_4_NOTES.md`
 
-### Phase 5 — Rate Limiting & Multi-Tenant Fairness
+### Phase 5 - Rate Limiting & Multi-Tenant Fairness
 - [x] Token bucket per tenant in Redis, applied at ingestion (`POST /events`) and at dispatch (worker skips over-limit tenants' messages instead of blocking).
 - **Done when:** simulate one tenant firing 10k events while another tenant's events still get delivered promptly, even though both share the same SQS queue.
 
-### Phase 6 — Security: HMAC Signing & Verification
+### Phase 6 - Security: HMAC Signing & Verification
 - Sign each webhook payload with a per-tenant secret (HMAC-SHA256), send as a header. Build a tiny example receiver-side verification snippet.
 - **Done when:** a tampered payload fails verification on the receiver side.
 
-### Phase 7 — Dashboard/API for Observability
+### Phase 7 - Dashboard/API for Observability
 - Delivery logs per tenant, success rate, DLQ browsing (pulling archived payloads from S3), manual replay (re-send to SQS).
-- **Replication:** point the dashboard's read queries at a Postgres read replica instead of the primary (a managed provider like Neon or Supabase gives you a free replica in a couple clicks — don't try to hand-roll streaming replication locally, that's a distraction from the actual lesson). Writes (ingestion, worker status updates) stay on the primary. This is the real reason replicas exist: isolate read-heavy dashboard traffic from write-path latency.
+- **Replication:** use a managed Postgres read replica for dashboard queries. Ingestion and worker status updates stay on the primary. This keeps dashboard read traffic off the write database.
 - **Done when:** you can see a failed delivery in the dashboard, view its archived payload, manually replay it successfully, and confirm (e.g. via a deliberate replication lag test) that dashboard reads are hitting the replica, not the primary.
 
-### Phase 8 — Load Testing & Hardening
+### Phase 8 - Load Testing & Hardening
 - Use `k6` or `autocannon` to simulate bursts. Find where it breaks (DB connection pool? SQS throughput? Redis latency? worker concurrency?), fix it, document what you learned.
-- **Sharding:** once your load test shows `deliveries` is actually the bottleneck (don't shard before you've measured this — sharding early is a classic mistake), split it by `tenantId` hash across two Postgres schemas or databases. Update the repository layer to route reads/writes to the right shard. The point isn't the mechanics — it's feeling the cost: every query that used to be "select from deliveries" now needs to know which shard to hit, and any cross-tenant query (e.g. "top 10 tenants by volume") gets meaningfully harder. Write down in your phase notes what broke or got harder, not just that it worked.
+- **Sharding:** only if load tests show `deliveries` is the bottleneck, split it by `tenantId` hash across two Postgres schemas or databases. Route reads and writes through the repository layer. Document the cost of shard routing and cross-tenant queries, such as finding the top 10 tenants by volume.
 - **Done when:** you have a before/after write-up of a real bottleneck you found and fixed, and (if you did the sharding exercise) a note on what got harder once data was split.
 
-### Phase 9 — Stretch Goals (optional)
+### Phase 9 - Stretch Goals (optional)
 - Move to SQS FIFO with per-tenant `MessageGroupId` for stronger ordering guarantees.
 - Add Prometheus + Grafana dashboards.
 - Multi-region delivery workers.
-- Explore Kafka as an alternative to SQS — learn partitioning and consumer groups for real.
+- Explore Kafka as an alternative to SQS - learn partitioning and consumer groups for real.
 
 ---
 
 ## 7. Production Readiness Checklist
 
 - **Config:** all secrets (including AWS keys) via env vars, never committed.
-- **IAM:** scope the AWS credentials to only the specific SQS queue and S3 bucket this project uses — not full account access.
+- **IAM:** scope the AWS credentials to only the specific SQS queue and S3 bucket this project uses - not full account access.
 - **Migrations:** Prisma migrations checked into git, run automatically on deploy.
-- **Health checks:** `/health` (liveness) and `/ready` (readiness — DB/Redis/SQS reachability) on both API and workers.
+- **Health checks:** `/health` (liveness) and `/ready` (readiness - DB/Redis/SQS reachability) on both API and workers.
 - **Graceful shutdown:** workers finish in-flight SQS messages before exiting on SIGTERM, rather than letting them time out.
 - **Logging:** structured JSON logs (Pino), correlation/request IDs threaded through API → SQS message attributes → worker.
 - **Error tracking:** Sentry (free tier) wired in early.
 - **Backups:** Postgres automated backups even on a hobby-tier host.
 - **Read replica connection string** kept separate from the primary's in config, so it's a one-line swap if the replica ever needs to be promoted or removed.
-- **Advisory lock TTL/heartbeat:** make sure a crashed poller actually releases its leader lock (session-scoped locks release on disconnect) — test this by killing `-9` the leader process and confirming the standby takes over within a few seconds.
+- **Advisory lock TTL/heartbeat:** make sure a crashed poller actually releases its leader lock (session-scoped locks release on disconnect) - test this by killing `-9` the leader process and confirming the standby takes over within a few seconds.
 - **S3 lifecycle policy:** archived payloads should expire after a reasonable retention window, not grow forever.
 - **Rate limit the ingestion API itself**, not just outbound delivery.
 
@@ -197,7 +197,7 @@ Done when: attempt timestamps grow exponentially, and exhausted events land in `
 
 ## 8. Deployment Plan
 
-1. **Local:** docker-compose for Postgres + Redis; SQS/S3 are hit directly from your laptop using real AWS credentials from day one — no local emulation needed.
-2. **First deploy (Phase 1–2 done):** push API + worker to Railway or Render, managed Postgres + Redis add-ons, same AWS SQS/S3 as local.
-3. **CI:** GitHub Actions — run tests + Prisma migration check on every PR, deploy on merge to main.
+1. **Local:** docker-compose for Postgres + Redis; SQS/S3 are hit directly from your laptop using real AWS credentials from day one - no local emulation needed.
+2. **First deploy (Phase 1-2 done):** push API + worker to Railway or Render, managed Postgres + Redis add-ons, same AWS SQS/S3 as local.
+3. **CI:** GitHub Actions - run tests + Prisma migration check on every PR, deploy on merge to main.
 4. **Later (optional):** move to full AWS (ECS/EC2 + RDS + ElastiCache) once you specifically want to learn cloud infra deployment.

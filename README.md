@@ -1,14 +1,14 @@
 # Waybill
 
 A reliable, multi-tenant webhook delivery platform, built to learn distributed
-systems fundamentals by building — not reading. A waybill is the document
+systems fundamentals through practice. A waybill is the document
 that travels with a shipment and proves it arrived; this does the same for
 HTTP events.
 
 Full project guide (architecture, phases, checkpoints, production readiness):
 see `docs/project-guide.md`. Phase notes: `docs/PHASE_0_NOTES.md`,
 `docs/PHASE_1_NOTES.md`, `docs/PHASE_2_NOTES.md`, `docs/PHASE_3_NOTES.md`, `docs/PHASE_4_NOTES.md`.
-Final target architecture and repository layout:
+Architecture and planned repository layout:
 [`docs/waybill-architecture.md`](docs/waybill-architecture.md)
 
 ## Quick start
@@ -25,7 +25,7 @@ bun run dev:api
 bun run dev:worker    
 ```
 
-Check `GET http://localhost:3000/health` — you should get `{ "status": "ok" }`.
+`GET http://localhost:3000/health` should return `{ "status": "ok" }`.
 
 ## Repo layout
 
@@ -39,4 +39,4 @@ docs/
 
 Runtime: **Bun**. Queue: **Amazon SQS** (real AWS, free tier). Large payloads
 and audit archive: **Amazon S3**. Cache/rate-limit/circuit-breaker state: **Redis**
-(local, via docker-compose — it is not the queue).
+(local, via docker-compose). Redis is not used as the queue.

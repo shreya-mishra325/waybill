@@ -1,12 +1,12 @@
-﻿# Waybill — target architecture
+# Waybill - target architecture
 
-This is the intended final design from [the project guide](./project-guide.md), covering Phases 0–8. It is a design map, not a claim that every component is implemented. Mermaid keeps diagrams reviewable alongside code and renders in GitHub Markdown.
+Target architecture for Phases 0-8 of [the project guide](./project-guide.md). Implementation status is tracked in Section 6.
 
-The earlier [Excalidraw board](./waybill-architecture.excalidraw) and [PDF](./waybill-architecture.pdf) are Phases 0–5 snapshots; they do not represent the complete target below.
+The [PDF](./waybill-architecture.pdf) is an earlier Phases 0-5 snapshot. The Mermaid diagrams below describe the current target.
 
 ## 1. System overview
 
-Read the delivery path from left to right. Purple nodes are planned Phase 6–7 capabilities. Solid arrows show requests or data operations; dashed arrows show control checks or replication. Labels specify whether a store operation is a read or a write.
+The delivery path runs left to right. Purple nodes indicate planned Phase 6-7 components. Solid edges represent requests and data operations; dashed edges represent control checks or replication.
 
 ```mermaid
 flowchart LR
@@ -14,21 +14,21 @@ flowchart LR
   receiver["Tenant webhook endpoint"]
   operator["Tenant / operator"]
 
-  subgraph platform["Waybill — TypeScript on Bun"]
-    subgraph apiService["API — packages/api"]
+  subgraph platform["Waybill - TypeScript on Bun"]
+    subgraph apiService["API - packages/api"]
       ingest["Ingestion API<br/>Validate and accept events"]
-      queries["Observability API — Phase 7<br/>History, success rates, dead letters"]
-      replay["Replay API — Phase 7<br/>Prepare failed delivery for replay"]
+      queries["Observability API - Phase 7<br/>History, success rates, dead letters"]
+      replay["Replay API - Phase 7<br/>Prepare failed delivery for replay"]
     end
     poller["Outbox poller<br/>One active leader; standby instances"]
     worker["Delivery workers<br/>Dispatch, retry, record outcomes"]
-    signer["HMAC-SHA256 signing — Phase 6<br/>Per-tenant secret; signature header"]
-    dashboard["Dashboard — Phase 7<br/>packages/dashboard"]
+    signer["HMAC-SHA256 signing - Phase 6<br/>Per-tenant secret; signature header"]
+    dashboard["Dashboard - Phase 7<br/>packages/dashboard"]
   end
 
   subgraph stores["Data and infrastructure"]
     primary[("PostgreSQL primary<br/>tenants, events, outbox,<br/>deliveries, dead_letters")]
-    replica[("PostgreSQL read replica — Phase 7<br/>Separate read connection")]
+    replica[("PostgreSQL read replica - Phase 7<br/>Separate read connection")]
     queue["Amazon SQS standard queue<br/>At-least-once transport"]
     redis[("Redis<br/>Tenant token buckets,<br/>destination circuit breakers,<br/>hot configuration cache")]
     s3[("Amazon S3<br/>Large payloads and<br/>dead-letter archives")]
@@ -62,11 +62,11 @@ flowchart LR
   class queries,replay,signer,dashboard,replica planned;
 ```
 
-The signer and Phase 7 API boxes are logical responsibilities within the worker and API, not additional services. The outbox poller is a separate runnable process in `packages/worker`; starting the delivery worker does not start it.
+HMAC signing is part of the delivery worker. Observability and replay are API modules. The outbox poller and delivery worker are separate processes within `packages/worker`.
 
-Dashboard database reads use the replica. Replay is a command: its authoritative state checks and writes use the primary. Replica lag means the dashboard may briefly display an older delivery status. Hot configuration caching is a target from the guide, not yet implemented.
+Dashboard queries use a dedicated read-replica connection. Replay validates authoritative state and persists changes on the primary. Dashboard views are eventually consistent due to replication lag. Tenant configuration caching remains planned.
 
-## 2. Accept and publish an event
+## 2. Ingestion and outbox publication
 
 ```mermaid
 sequenceDiagram
@@ -108,15 +108,15 @@ sequenceDiagram
   end
 ```
 
-- The ingestion endpoint does not publish to SQS. The committed outbox records the obligation to publish.
-- The repository uses a 256 KiB claim-check threshold. Treat this as project configuration, rather than a statement about the current AWS service limit. Queue sizing must include the complete message envelope and attributes.
+- The API commits the event and outbox entry atomically. The poller handles SQS publication.
+- The configured claim-check threshold is 256 KiB. This is a project setting, not the current AWS service limit. Size checks also need to account for the message envelope and attributes.
 - The current queue body is `{ eventId, tenantId, type, payload, payloadS3Key }`, with `tenantId` also a message attribute. The S3 bucket comes from configuration. Correlation-ID propagation is a production-readiness target.
 - S3 upload happens before the transaction. A failed transaction can leave an orphan object, but cannot commit an event without its outbox row.
 - A crash after `SendMessage` but before marking the row published can produce a duplicate. Advisory locks coordinate pollers; they do not make PostgreSQL and SQS one atomic transaction.
 
-## 3. Deliver, retry, or dead-letter
+## 3. Delivery lifecycle
 
-This is the intended delivery lifecycle, including Phase 6 signing. It omits malformed-message handling to keep the main path readable; today's worker logs and deletes malformed queue messages.
+The flow includes Phase 6 HMAC signing. Malformed-message handling is omitted; the current worker logs and deletes invalid queue messages.
 
 ```mermaid
 flowchart TD
@@ -152,7 +152,7 @@ Retries retain the existing SQS message and change its visibility; they do not p
 
 The delivery guarantee is **at least once**, with bounded automatic retries and durable dead letters. A permanently unavailable endpoint cannot be guaranteed to receive an event. Receivers must tolerate duplicate `eventId` values. The current code also lacks an explicit skip for already-successful deliveries.
 
-## 4. Observe and manually replay — Phase 7 target
+## 4. Observability and replay (Phase 7)
 
 ```mermaid
 sequenceDiagram
@@ -186,11 +186,11 @@ sequenceDiagram
   P-->>R: Replicate updated records
 ```
 
-The guide specifies manual re-send to SQS but does not yet define replay persistence or duplicate-command handling. Phase 7 must make the delivery eligible again: re-sending an unchanged `DEAD_LETTERED` delivery would be discarded by today's worker. It must also address a crash between the primary write and queue publication, for example by extending the outbox design. This is the logical flow, not a completed atomic replay protocol.
+Replay semantics are pending Phase 7. The worker discards messages associated with a `DEAD_LETTERED` delivery, so replay must transition the delivery to an eligible state or create a new delivery record. The implementation must define attempt accounting, audit history, command idempotency, and recovery from a crash between the database write and SQS publication. Extending the transactional outbox is one option.
 
 ## 5. Target repository layout
 
-Existing paths are shown without annotations. Entries marked **planned** describe responsibilities from the guide; exact files will be chosen in the relevant phase.
+Annotations distinguish existing modules from planned additions. File-level design is deferred to the relevant phase.
 
 ```text
 waybill/
@@ -232,7 +232,7 @@ The dashboard calls the API; it never receives database credentials. API layerin
 
 | Scope | Target | Current repository |
 |---|---|---|
-| Phases 0–3 | Ingestion, outbox, leader election, delivery, retries, dead letters | Implemented with phase notes |
+| Phases 0-3 | Ingestion, outbox, leader election, delivery, retries, dead letters | Implemented with phase notes |
 | Phase 4 | Per-destination circuit breaker with one recovery probe | Implemented; atomic cross-worker probe coordination still needs hardening |
 | Phase 5 | Tenant limits at ingestion and dispatch; demonstrated noisy-tenant fairness | Limiters implemented; both currently share one Redis key per tenant; fairness checkpoint not documented |
 | Phase 6 | HMAC signing and receiver verification | Planned; tenant secret field already exists |
@@ -240,8 +240,8 @@ The dashboard calls the API; it never receives database credentials. API layerin
 | Phase 8 | Measure bottlenecks and harden the system | Planned; shard deliveries by tenant only if measurements justify it |
 | Phase 9 | FIFO ordering, Prometheus/Grafana, multiple regions, Kafka exploration | Optional extensions, outside the baseline diagram |
 
-Today's worker sends every event to one configured `RECEIVER_URL`. The final product needs tenant destination resolution; the guide does not yet specify its configuration API or schema. The endpoint box represents that intended capability, not an existing endpoint-management feature.
+Delivery currently uses a single configured `RECEIVER_URL`. Per-tenant destination resolution requires a configuration API and schema changes that are not yet specified.
 
-The operational target also includes external-call timeouts, graceful shutdown, liveness/readiness checks, Pino logs with correlation IDs across API/SQS/worker, Sentry error tracking, scoped IAM, environment-managed secrets, migration checks in CI, database backups, and S3 retention. These are cross-cutting requirements from the guide, not additional delivery services or claims of current completeness. Successful-delivery payload archiving is mentioned in the guide's stack overview but has no defined phase checkpoint; the diagram shows the explicit claim-check and dead-letter archive paths.
+Production requirements include external-call deadlines, graceful shutdown, liveness/readiness probes, structured Pino logs with correlation IDs, Sentry, scoped IAM, environment-based secrets, CI migration checks, database backups, and S3 lifecycle policies. Implementation status must be verified against the guide's readiness checklist. Successful-delivery archiving has no assigned phase; the diagrams cover claim-check storage and dead-letter archives.
 
-Local development uses Docker for PostgreSQL and Redis and real AWS for SQS/S3. The initial hosted target is Railway or Render with managed PostgreSQL/Redis; moving compute and databases to AWS is optional. Any measured sharding change needs a revised diagram that also accounts for dashboard reads and replica routing.
+Local infrastructure consists of containerized PostgreSQL and Redis with AWS-hosted SQS and S3. Initial deployment targets Railway or Render with managed PostgreSQL and Redis. A full AWS deployment is optional. Any sharding introduced after load testing must account for repository routing, cross-tenant queries, and replica reads.
