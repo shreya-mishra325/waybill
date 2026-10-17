@@ -275,6 +275,7 @@ async function handleMessage(
   const rateLimit = await consumeTenantToken(
     redis,
     parsed.tenantId,
+    "delivery",
     workerRateLimitConfig(),
   );
   if (!rateLimit.allowed) {

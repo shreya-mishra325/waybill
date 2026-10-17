@@ -1,7 +1,40 @@
 import { describe, expect, it } from "bun:test";
-import { consumeToken } from "./rate-limiter";
+import { consumeTenantToken, consumeToken } from "./rate-limiter";
 
 describe("tenant token bucket", () => {
+  it("keeps ingestion, dispatch, and other tenants' budgets independent", async () => {
+    // Model Redis storage by key to test the scope passed to EVAL.
+    // This does not exercise the Lua script or Redis concurrency semantics.
+    const buckets = new Map<string, { tokens: number; lastRefillAt: number }>();
+    const redis = {
+      async eval(_script: string, _keyCount: number, ...args: string[]) {
+        const [key, capacity, refillPerSecond, timestamp] = args;
+        const now = Number(timestamp);
+        const config = {
+          capacity: Number(capacity),
+          refillPerSecond: Number(refillPerSecond),
+        };
+        const current = buckets.get(key) ?? {
+          tokens: config.capacity,
+          lastRefillAt: now,
+        };
+        const decision = consumeToken(current, now, config);
+        buckets.set(key, decision.snapshot);
+        return [Number(decision.allowed), decision.tokens, decision.retryAfterMs];
+      },
+    };
+    const config = { capacity: 1, refillPerSecond: 1 };
+    const consume = (tenantId: string, scope: "ingestion" | "delivery") =>
+      consumeTenantToken(redis, tenantId, scope, config, 1_000);
+
+    expect((await consume("tenant-a", "ingestion")).allowed).toBe(true);
+    expect((await consume("tenant-a", "ingestion")).allowed).toBe(false);
+    expect((await consume("tenant-a", "delivery")).allowed).toBe(true);
+    expect((await consume("tenant-a", "delivery")).allowed).toBe(false);
+    expect((await consume("tenant-b", "ingestion")).allowed).toBe(true);
+    expect((await consume("tenant-b", "delivery")).allowed).toBe(true);
+  });
+
   it("allows the configured burst and rejects the next token", () => {
     let state = { tokens: 3, lastRefillAt: 1_000 };
 

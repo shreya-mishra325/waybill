@@ -63,6 +63,7 @@ export async function enforceIngestionRateLimit(
   const decision = await consumeTenantToken(
     await readyRedisClient(),
     tenantId,
+    "ingestion",
     rateLimitConfig(),
   );
   if (!decision.allowed) {

@@ -234,7 +234,7 @@ The dashboard calls the API; it never receives database credentials. API layerin
 |---|---|---|
 | Phases 0-3 | Ingestion, outbox, leader election, delivery, retries, dead letters | Implemented with phase notes |
 | Phase 4 | Per-destination circuit breaker with one recovery probe | Implemented; atomic cross-worker probe coordination still needs hardening |
-| Phase 5 | Tenant limits at ingestion and dispatch; demonstrated noisy-tenant fairness | Limiters implemented; both currently share one Redis key per tenant; fairness checkpoint not documented |
+| Phase 5 | Tenant limits at ingestion and dispatch; demonstrated noisy-tenant fairness | Independent ingestion and delivery buckets implemented; noisy-tenant fairness test pending |
 | Phase 6 | HMAC signing and receiver verification | Planned; tenant secret field already exists |
 | Phase 7 | Dashboard, observability API, payload viewing, replay, read replica | Planned |
 | Phase 8 | Measure bottlenecks and harden the system | Planned; shard deliveries by tenant only if measurements justify it |

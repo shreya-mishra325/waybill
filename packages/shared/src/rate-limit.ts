@@ -90,13 +90,18 @@ export function consumeToken(
   };
 }
 
-export function tenantRateLimitKey(tenantId: string): string {
-  return `waybill:rate-limit:tenant:${tenantId}`;
+export function tenantRateLimitKey(
+  tenantId: string,
+  scope: "ingestion" | "delivery",
+): string {
+  // Accepting events must not consume the tokens needed to dispatch them.
+  return `waybill:rate-limit:${scope}:tenant:${tenantId}`;
 }
 
 export async function consumeTenantToken(
   client: RedisEvalClient,
   tenantId: string,
+  scope: "ingestion" | "delivery",
   overrides?: Partial<RateLimitConfig>,
   now = Date.now(),
 ): Promise<TokenBucketDecision> {
@@ -104,7 +109,7 @@ export async function consumeTenantToken(
   const result = (await client.eval(
     CONSUME_TOKEN_SCRIPT,
     1,
-    tenantRateLimitKey(tenantId),
+    tenantRateLimitKey(tenantId, scope),
     String(config.capacity),
     String(config.refillPerSecond),
     String(now),
