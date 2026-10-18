@@ -9,8 +9,13 @@ function requireEnv(name: string): string {
   return value;
 }
 
+let sqsClient: SQSClient | undefined;
+
 export function createSqsClient(): SQSClient {
-  return new SQSClient({ region: requireEnv("AWS_REGION") });
+  // Reuse the client's HTTP connection pool across sends, receives, and deletes.
+  // A new client per message repeatedly pays the connection setup cost.
+  sqsClient ??= new SQSClient({ region: requireEnv("AWS_REGION") });
+  return sqsClient;
 }
 
 export function createS3Client(): S3Client {

@@ -24,6 +24,7 @@ import {
   recordDeliverySuccess,
 } from "./delivery/circuit-breaker";
 import { postWebhook } from "./delivery/http";
+import { processDeliveryBatch, type Acknowledge } from "./delivery/message-batch";
 import { consumeTenantToken } from "./delivery/rate-limiter";
 import { createDeadLetter } from "./repositories/dead-letters";
 import {
@@ -232,7 +233,7 @@ async function handleMessage(
   targetUrl: string,
   sqsMessage: Message,
   redis = createRedisClient(),
-): Promise<void> {
+): Promise<Acknowledge | void> {
   const sqs = createSqsClient();
   const receipt = sqsMessage.ReceiptHandle;
   if (!receipt) {
@@ -290,7 +291,7 @@ async function handleMessage(
   }
 
   const existing = await findByEventAndUrl(parsed.eventId, targetUrl);
-  if (existing?.status === "DEAD_LETTERED") {
+  if (existing?.status === "DEAD_LETTERED" || existing?.status === "SUCCEEDED") {
     await sendWithTimeout(
       (abortSignal) =>
         sqs.send(
@@ -302,8 +303,9 @@ async function handleMessage(
         ),
       "SQS DeleteMessage",
     );
-    console.log("delivery already dead-lettered, deleted SQS message", {
+    console.log("delivery already complete, deleted SQS message", {
       eventId: parsed.eventId,
+      status: existing.status,
     });
     return;
   }
@@ -405,22 +407,24 @@ async function handleMessage(
 
   const afterSuccess = await recordDeliverySuccess(redis, targetUrl);
   await markSucceeded(delivery.id);
-  await sendWithTimeout(
-    (abortSignal) =>
-      sqs.send(
-        new DeleteMessageCommand({
-          QueueUrl: queueUrl,
-          ReceiptHandle: receipt,
-        }),
-        { abortSignal },
-      ),
-    "SQS DeleteMessage",
-  );
-  console.log("delivery succeeded", {
-    eventId: parsed.eventId,
-    deliveryId: delivery.id,
-    circuitState: afterSuccess.state,
-  });
+  return async () => {
+    await sendWithTimeout(
+      (abortSignal) =>
+        sqs.send(
+          new DeleteMessageCommand({
+            QueueUrl: queueUrl,
+            ReceiptHandle: receipt,
+          }),
+          { abortSignal },
+        ),
+      "SQS DeleteMessage",
+    );
+    console.log("delivery succeeded", {
+      eventId: parsed.eventId,
+      deliveryId: delivery.id,
+      circuitState: afterSuccess.state,
+    });
+  };
 }
 
 async function main(): Promise<void> {
@@ -439,7 +443,9 @@ async function main(): Promise<void> {
           sqs.send(
             new ReceiveMessageCommand({
               QueueUrl: queueUrl,
-              MaxNumberOfMessages: 5,
+              // Amortize receive latency across a full batch. Only completed
+              // deliveries' SQS acknowledgements overlap within the batch.
+              MaxNumberOfMessages: 10,
               WaitTimeSeconds: LONG_POLL_SECONDS,
               VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
               MessageAttributeNames: ["All"],
@@ -450,16 +456,16 @@ async function main(): Promise<void> {
       );
 
       const messages = received.Messages ?? [];
-      for (const message of messages) {
-        try {
-          await handleMessage(queueUrl, targetUrl, message, redis);
-        } catch (err) {
+      await processDeliveryBatch(
+        messages,
+        (message) => handleMessage(queueUrl, targetUrl, message, redis),
+        (message, err) => {
           console.error("handle message failed", {
             messageId: message.MessageId,
             err,
           });
-        }
-      }
+        },
+      );
     } catch (err) {
       console.error("receive loop failed", err);
     }

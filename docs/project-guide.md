@@ -155,7 +155,10 @@ Done when: attempt timestamps grow exponentially, and exhausted events land in `
 ### Phase 5 - Rate Limiting & Multi-Tenant Fairness
 - [x] Token bucket per tenant in Redis, applied at ingestion (`POST /events`) and at dispatch (worker skips over-limit tenants' messages instead of blocking).
 - [x] Independent ingestion and delivery budgets per tenant.
-- [ ] Verify noisy-tenant fairness with the 10k-event scenario below.
+- [x] Repeatable 10k-request runner with baseline and per-tenant delivery measurements.
+- [x] Verify the rate-limited 10k-request burst with concurrent quiet-tenant traffic.
+- [ ] Validate dispatch fairness under a sustained backlog of accepted events.
+- Measured quiet-tenant p95 improved from 226 seconds to 25.7 seconds against the unchanged 30-second threshold. All accepted events arrived. The passing run admitted 246 of the busy tenant's 10,000 requests; the rest received HTTP 429.
 - Notes: [Phase 5](./PHASE_5_NOTES.md) (in progress).
 - **Done when:** simulate one tenant firing 10k events while another tenant's events still get delivered promptly, even though both share the same SQS queue.
 

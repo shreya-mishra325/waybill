@@ -125,7 +125,7 @@ flowchart TD
   circuit -->|"Yes"| tokens{"Tenant dispatch token available?"}
   tokens -->|"No"| defer
   tokens -->|"Yes"| state{"Delivery state?"}
-  state -->|"Already dead-lettered"| remove["Delete SQS message"]
+  state -->|"Already succeeded or dead-lettered"| remove["Delete SQS message"]
   state -->|"Retry not due"| defer
   state -->|"Eligible"| attempt["Persist IN_FLIGHT<br/>Increment attempt count"]
   attempt --> payload["Load inline payload or fetch from S3"]
@@ -150,7 +150,9 @@ flowchart TD
 
 Retries retain the existing SQS message and change its visibility; they do not publish a replacement message. If archiving or persistence fails, the worker must leave the message undeleted so it can be processed again.
 
-The delivery guarantee is **at least once**, with bounded automatic retries and durable dead letters. A permanently unavailable endpoint cannot be guaranteed to receive an event. Receivers must tolerate duplicate `eventId` values. The current code also lacks an explicit skip for already-successful deliveries.
+The delivery guarantee is **at least once**, with bounded automatic retries and durable dead letters. A permanently unavailable endpoint cannot be guaranteed to receive an event. Receivers must tolerate duplicate `eventId` values. A redelivery with an existing `SUCCEEDED` record is acknowledged without repeating the webhook, but a crash between HTTP success and persistence can still cause duplicates.
+
+The publisher selects pending rows in tenant rounds and sends up to ten concurrently. Its starting tenant rotates between batches. Productive batches continue immediately; idle polls and failures retain a delay. The worker processes webhook deliveries sequentially and overlaps only the SQS deletions for completed deliveries, bounded by the receive batch of ten.
 
 ## 4. Observability and replay (Phase 7)
 
@@ -234,7 +236,7 @@ The dashboard calls the API; it never receives database credentials. API layerin
 |---|---|---|
 | Phases 0-3 | Ingestion, outbox, leader election, delivery, retries, dead letters | Implemented with phase notes |
 | Phase 4 | Per-destination circuit breaker with one recovery probe | Implemented; atomic cross-worker probe coordination still needs hardening |
-| Phase 5 | Tenant limits at ingestion and dispatch; demonstrated noisy-tenant fairness | Independent ingestion and delivery buckets implemented; noisy-tenant fairness test pending |
+| Phase 5 | Tenant limits at ingestion and dispatch; demonstrated noisy-tenant fairness | Independent buckets, tenant rotation in publication, and overlapping SQS acknowledgements implemented; rate-limited 10k-request check passed at 25.7-second quiet p95; sustained dispatch-pressure test pending |
 | Phase 6 | HMAC signing and receiver verification | Planned; tenant secret field already exists |
 | Phase 7 | Dashboard, observability API, payload viewing, replay, read replica | Planned |
 | Phase 8 | Measure bottlenecks and harden the system | Planned; shard deliveries by tenant only if measurements justify it |

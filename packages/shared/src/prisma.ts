@@ -22,6 +22,7 @@ export const prisma = new PrismaClient({
 export function createSingleConnectionPrisma(): PrismaClient {
   const parsed = new URL(databaseUrl());
   parsed.searchParams.set("connection_limit", "1");
+  parsed.searchParams.set("socket_timeout", "10");
   return new PrismaClient({
     datasources: {
       db: { url: parsed.toString() },

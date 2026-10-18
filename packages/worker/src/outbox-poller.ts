@@ -2,6 +2,7 @@ import { SendMessageCommand } from "@aws-sdk/client-sqs";
 import {
   createSingleConnectionPrisma,
   createSqsClient,
+  type Prisma,
   type PrismaClient,
   type QueueMessage,
 } from "@waybill/shared";
@@ -56,12 +57,12 @@ async function releaseLeader(db: PrismaClient): Promise<void> {
   `;
 }
 
-async function publishOne(
-  db: PrismaClient,
+export async function publishOne(
+  db: Prisma.TransactionClient,
   row: Awaited<ReturnType<typeof listUnpublished>>[number],
+  sqs = createSqsClient(),
 ): Promise<void> {
   const queueUrl = requireEnv("SQS_QUEUE_URL");
-  const sqs = createSqsClient();
 
   const message: QueueMessage = {
     eventId: row.event.id,
@@ -105,19 +106,28 @@ async function publishOne(
   });
 }
 
-async function tick(db: PrismaClient): Promise<void> {
-  const rows = await listUnpublished(db, BATCH_SIZE);
-  for (const row of rows) {
-    try {
-      await publishOne(db, row);
-    } catch (err) {
+export async function tick(db: PrismaClient, afterTenantId = "") {
+  const rows = await listUnpublished(db, BATCH_SIZE, afterTenantId);
+  // Bound parallel sends to this batch and settle every result before selecting
+  // more rows. A failed send must leave its outbox row available for retry.
+  const results = await Promise.allSettled(rows.map((row) => publishOne(db, row)));
+  let failed = false;
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      failed = true;
+      const row = rows[index];
       console.error("outbox publish failed", {
         outboxId: row.id,
         eventId: row.eventId,
-        err,
+        err: result.reason,
       });
     }
-  }
+  });
+  return {
+    count: rows.length,
+    failed,
+    afterTenantId: rows.at(-1)?.event.tenantId ?? afterTenantId,
+  };
 }
 
 async function main(): Promise<void> {
@@ -126,44 +136,54 @@ async function main(): Promise<void> {
 
   const db = createSingleConnectionPrisma();
   let isLeader = false;
+  let stopping = false;
+  let afterTenantId = "";
 
-  const shutdown = async () => {
-    if (isLeader) {
-      await releaseLeader(db);
-    }
-    await db.$disconnect();
-    process.exit(0);
-  };
-  process.on("SIGINT", () => {
-    void shutdown();
-  });
-  process.on("SIGTERM", () => {
-    void shutdown();
-  });
+  // Keep the leader lock until all sends in the current batch have settled.
+  process.on("SIGINT", () => { stopping = true; });
+  process.on("SIGTERM", () => { stopping = true; });
 
   console.log("outbox poller started");
 
-  while (true) {
-    if (!isLeader) {
-      isLeader = await tryBecomeLeader(db);
-      if (!isLeader) {
-        console.log("standby, another poller holds the lock");
-        await sleep(STANDBY_MS);
-        continue;
-      }
-      console.log("became leader");
-    }
+  try {
+    while (!stopping) {
+      try {
+        if (!isLeader) {
+          isLeader = await tryBecomeLeader(db);
+          if (!isLeader) {
+            console.log("standby, another poller holds the lock");
+            await sleep(STANDBY_MS);
+            continue;
+          }
+          console.log("became leader");
+        }
 
-    try {
-      await tick(db);
-    } catch (err) {
-      console.error("outbox poll tick failed", err);
+        const result = await tick(db, afterTenantId);
+        afterTenantId = result.afterTenantId;
+        if (result.failed) throw new Error("One or more outbox publications failed");
+        // Waiting after a productive batch adds delay even when work is ready.
+        if (result.count === 0 && !stopping) await sleep(POLL_MS);
+      } catch (err) {
+        console.error("outbox poll tick failed", err);
+        // A query failure may have replaced the session and released its lock.
+        // Disconnect, then reacquire leadership before publishing again.
+        isLeader = false;
+        await db.$disconnect();
+        if (!stopping) await sleep(POLL_MS);
+      }
     }
-    await sleep(POLL_MS);
+  } finally {
+    try {
+      if (isLeader) await releaseLeader(db);
+    } finally {
+      await db.$disconnect();
+    }
   }
 }
 
-main().catch((err: unknown) => {
-  console.error("outbox poller crashed", err);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((err: unknown) => {
+    console.error("outbox poller crashed", err);
+    process.exit(1);
+  });
+}
