@@ -67,7 +67,7 @@ flowchart LR
 
 HMAC signing, the dashboard, replay, and the read replica are planned. Automatic retries use `ChangeMessageVisibility` on the existing SQS message. Manual replay is a separate Phase 7 operation. On retry exhaustion, the worker archives the payload and persists the dead-letter state before calling `DeleteMessage`. Delivery attempts are at least once; receivers must handle duplicates.
 
-**Tenant fairness:** workers enforce per-tenant Redis token buckets over a shared SQS queue. Rate-limited messages are deferred through visibility changes without blocking dispatch for other tenants. The Phase 5 load test must validate delivery latency under uneven tenant traffic.
+**Tenant fairness:** the publisher sets `MessageGroupId = tenantId` on every outgoing message. This enables [SQS fair queue scheduling](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fair-queues.html) on the existing standard queue. Workers retain per-tenant Redis token buckets, bounded receive buffering, and an explicit ten-message per-tenant turn budget. Excess selections are deferred in visibility batches. Buffered reservations are renewed and released before deliberate retry delays or deletion. Queue scheduling reduces noisy-tenant interference; Redis enforces the delivery budget. FIFO ordering remains an optional Phase 9 change. The accepted-backlog test validates the combined behavior.
 
 ---
 
@@ -157,9 +157,11 @@ Done when: attempt timestamps grow exponentially, and exhausted events land in `
 - [x] Independent ingestion and delivery budgets per tenant.
 - [x] Repeatable 10k-request runner with baseline and per-tenant delivery measurements.
 - [x] Verify the rate-limited 10k-request burst with concurrent quiet-tenant traffic.
-- [ ] Validate dispatch fairness under a sustained backlog of accepted events.
+- [x] Add an accepted-backlog runner with controlled worker start and preload evidence.
+- [x] Meet the local quiet-tenant p95 criterion under a 1,000-event accepted backlog.
+- Accepted-backlog result on 2026-10-22: explicit tenant turns and batched visibility deferrals reduced quiet p95 from 106.9 to 25.2 seconds. All 1,000 busy events and 444 quiet load events arrived. Quiet maximum was 63.5 seconds and busy maximum was 513.6 seconds; tail latency and throughput tradeoffs still need hardening.
 - Measured quiet-tenant p95 improved from 226 seconds to 25.7 seconds against the unchanged 30-second threshold. All accepted events arrived. The passing run admitted 246 of the busy tenant's 10,000 requests; the rest received HTTP 429.
-- Notes: [Phase 5](./PHASE_5_NOTES.md) (in progress).
+- Notes: [Phase 5](./PHASE_5_NOTES.md), including test settings and measured limitations.
 - **Done when:** simulate one tenant firing 10k events while another tenant's events still get delivered promptly, even though both share the same SQS queue.
 
 ### Phase 6 - Security: HMAC Signing & Verification

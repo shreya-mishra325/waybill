@@ -29,7 +29,7 @@ flowchart LR
   subgraph stores["Data and infrastructure"]
     primary[("PostgreSQL primary<br/>tenants, events, outbox,<br/>deliveries, dead_letters")]
     replica[("PostgreSQL read replica - Phase 7<br/>Separate read connection")]
-    queue["Amazon SQS standard queue<br/>At-least-once transport"]
+    queue["Amazon SQS standard queue<br/>At-least-once transport<br/>Tenant fair scheduling"]
     redis[("Redis<br/>Tenant token buckets,<br/>destination circuit breakers,<br/>hot configuration cache")]
     s3[("Amazon S3<br/>Large payloads and<br/>dead-letter archives")]
   end
@@ -40,7 +40,7 @@ flowchart LR
   ingest -->|"Write event + outbox in one transaction"| primary
   poller -.->|"Session advisory lock on dedicated connection"| primary
   poller -->|"Read unpublished outbox; mark published after send"| primary
-  poller -->|"Send payload or S3 reference + tenantId"| queue
+  poller -->|"Send payload or S3 reference; group by tenantId"| queue
   queue -->|"Workers long-poll for messages"| worker
   worker -.->|"Check dispatch tokens and destination circuit"| redis
   worker -->|"Load large payload; archive exhausted failure"| s3
@@ -110,17 +110,19 @@ sequenceDiagram
 
 - The API commits the event and outbox entry atomically. The poller handles SQS publication.
 - The configured claim-check threshold is 256 KiB. This is a project setting, not the current AWS service limit. Size checks also need to account for the message envelope and attributes.
-- The current queue body is `{ eventId, tenantId, type, payload, payloadS3Key }`, with `tenantId` also a message attribute. The S3 bucket comes from configuration. Correlation-ID propagation is a production-readiness target.
+- The current queue body is `{ eventId, tenantId, type, payload, payloadS3Key }`, with `tenantId` also a message attribute and `MessageGroupId` set to the same tenant ID. The S3 bucket comes from configuration. Correlation-ID propagation is a production-readiness target.
 - S3 upload happens before the transaction. A failed transaction can leave an orphan object, but cannot commit an event without its outbox row.
 - A crash after `SendMessage` but before marking the row published can produce a duplicate. Advisory locks coordinate pollers; they do not make PostgreSQL and SQS one atomic transaction.
 
 ## 3. Delivery lifecycle
 
-The flow includes Phase 6 HMAC signing. Malformed-message handling is omitted; the current worker logs and deletes invalid queue messages.
+This flow includes the pre-attempt tenant selection budget and Phase 6 HMAC signing. Malformed-message handling is omitted; the current worker logs and deletes invalid queue messages.
 
 ```mermaid
 flowchart TD
-  receive["Long-poll SQS"] --> circuit{"Destination circuit allows attempt?"}
+  receive["Long-poll SQS"] --> turn{"Tenant turn available?"}
+  turn -->|"No"| defer
+  turn -->|"Yes"| circuit{"Destination circuit allows attempt?"}
   circuit -->|"No"| defer["Change message visibility<br/>Do not increment attempt count"]
   circuit -->|"Yes"| tokens{"Tenant dispatch token available?"}
   tokens -->|"No"| defer
@@ -152,7 +154,7 @@ Retries retain the existing SQS message and change its visibility; they do not p
 
 The delivery guarantee is **at least once**, with bounded automatic retries and durable dead letters. A permanently unavailable endpoint cannot be guaranteed to receive an event. Receivers must tolerate duplicate `eventId` values. A redelivery with an existing `SUCCEEDED` record is acknowledged without repeating the webhook, but a crash between HTTP success and persistence can still cause duplicates.
 
-The publisher selects pending rows in tenant rounds and sends up to ten concurrently. Its starting tenant rotates between batches. Productive batches continue immediately; idle polls and failures retain a delay. The worker processes webhook deliveries sequentially and overlaps only the SQS deletions for completed deliveries, bounded by the receive batch of ten.
+The publisher selects pending rows in tenant rounds and sends up to ten concurrently. It sets `MessageGroupId = tenantId` to enable SQS standard-queue fair scheduling; a custom message attribute alone does not enable it. Its starting tenant rotates between batches. Productive batches continue immediately; idle polls and failures retain a delay. The worker uses up to ten concurrent long polls and buffers at most one hundred messages. Webhook deliveries remain sequential. Each receive cycle selects up to ten messages per tenant and defers excess messages in visibility batches. Reservations are renewed for waiting/active work and released before retry delays or deletion. Completed SQS deletions overlap within the ten-message response being processed.
 
 ## 4. Observability and replay (Phase 7)
 
@@ -188,7 +190,7 @@ sequenceDiagram
   P-->>R: Replicate updated records
 ```
 
-Replay semantics are pending Phase 7. The worker discards messages associated with a `DEAD_LETTERED` delivery, so replay must transition the delivery to an eligible state or create a new delivery record. The implementation must define attempt accounting, audit history, command idempotency, and recovery from a crash between the database write and SQS publication. Extending the transactional outbox is one option.
+Replay semantics are pending Phase 7. Replayed messages must retain `MessageGroupId = tenantId` for fair scheduling. The worker discards messages associated with a `DEAD_LETTERED` delivery, so replay must transition the delivery to an eligible state or create a new delivery record. The implementation must define attempt accounting, audit history, command idempotency, and recovery from a crash between the database write and SQS publication. Extending the transactional outbox is one option.
 
 ## 5. Target repository layout
 
@@ -236,7 +238,7 @@ The dashboard calls the API; it never receives database credentials. API layerin
 |---|---|---|
 | Phases 0-3 | Ingestion, outbox, leader election, delivery, retries, dead letters | Implemented with phase notes |
 | Phase 4 | Per-destination circuit breaker with one recovery probe | Implemented; atomic cross-worker probe coordination still needs hardening |
-| Phase 5 | Tenant limits at ingestion and dispatch; demonstrated noisy-tenant fairness | Independent buckets, tenant rotation in publication, and overlapping SQS acknowledgements implemented; rate-limited 10k-request check passed at 25.7-second quiet p95; sustained dispatch-pressure test pending |
+| Phase 5 | Tenant limits at ingestion and dispatch; demonstrated noisy-tenant fairness | Independent buckets, tenant rotation in publication, and overlapping SQS acknowledgements implemented; rate-limited 10k-request check passed at 25.7-second quiet p95; accepted-backlog p95 passed at 25.2 seconds with explicit tenant turns and batched deferral; quiet maximum 63.5 seconds and busy-throughput cost remain hardening work |
 | Phase 6 | HMAC signing and receiver verification | Planned; tenant secret field already exists |
 | Phase 7 | Dashboard, observability API, payload viewing, replay, read replica | Planned |
 | Phase 8 | Measure bottlenecks and harden the system | Planned; shard deliveries by tenant only if measurements justify it |
