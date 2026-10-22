@@ -3,8 +3,6 @@ import { consumeTenantToken, consumeToken } from "./rate-limiter";
 
 describe("tenant token bucket", () => {
   it("keeps ingestion, dispatch, and other tenants' budgets independent", async () => {
-    // Model Redis storage by key to test the scope passed to EVAL.
-    // This does not exercise the Lua script or Redis concurrency semantics.
     const buckets = new Map<string, { tokens: number; lastRefillAt: number }>();
     const redis = {
       async eval(_script: string, _keyCount: number, ...args: string[]) {

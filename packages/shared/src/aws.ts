@@ -12,8 +12,6 @@ function requireEnv(name: string): string {
 let sqsClient: SQSClient | undefined;
 
 export function createSqsClient(): SQSClient {
-  // Reuse the client's HTTP connection pool across sends, receives, and deletes.
-  // A new client per message repeatedly pays the connection setup cost.
   sqsClient ??= new SQSClient({ region: requireEnv("AWS_REGION") });
   return sqsClient;
 }

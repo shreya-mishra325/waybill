@@ -23,9 +23,6 @@ export function backoffDelayMs(attemptCount: number): number {
     BASE_DELAY_MS * 2 ** Math.max(attemptCount - 1, 0),
     MAX_DELAY_MS,
   );
-  // Full jitter: sleep is random in [0, exp], not exactly exp.
-  // Without jitter, every worker that failed at the same time wakes
-  // together and hits the sick endpoint as a herd.
   return Math.floor(Math.random() * (exp + 1));
 }
 

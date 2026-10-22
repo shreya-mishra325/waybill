@@ -94,7 +94,6 @@ export function tenantRateLimitKey(
   tenantId: string,
   scope: "ingestion" | "delivery",
 ): string {
-  // Accepting events must not consume the tokens needed to dispatch them.
   return `waybill:rate-limit:${scope}:tenant:${tenantId}`;
 }
 

@@ -7,8 +7,6 @@ export async function listUnpublished(
   limit: number,
   afterTenantId = "",
 ): Promise<UnpublishedOutbox[]> {
-  // Rank across the entire pending set before applying LIMIT. Reordering only
-  // the oldest ten rows would still leave a quiet tenant behind a large burst.
   const selected = await db.$queryRaw<Array<{ id: string }>>`
     WITH pending AS (
       SELECT o.id, e.tenant_id,

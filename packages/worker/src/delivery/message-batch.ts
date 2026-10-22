@@ -12,14 +12,11 @@ export async function processDeliveryBatch(
     try {
       const acknowledge = await handle(message);
       if (acknowledge) {
-        // Only queue deletion overlaps. HTTP delivery and its durable status
-        // update have finished before handle returns this callback.
         acknowledgements.push(acknowledge().catch((err: unknown) => onError(message, err)));
       }
     } catch (err) {
       onError(message, err);
     }
   }
-  // Bound outstanding deletes to one receive batch and observe every failure.
   await Promise.all(acknowledgements);
 }
