@@ -77,6 +77,7 @@ export async function publishOne(
       sqs.send(
         new SendMessageCommand({
           QueueUrl: queueUrl,
+          MessageGroupId: row.event.tenantId,
           MessageBody: JSON.stringify(message),
           MessageAttributes: {
             tenantId: {
@@ -108,8 +109,6 @@ export async function publishOne(
 
 export async function tick(db: PrismaClient, afterTenantId = "") {
   const rows = await listUnpublished(db, BATCH_SIZE, afterTenantId);
-  // Bound parallel sends to this batch and settle every result before selecting
-  // more rows. A failed send must leave its outbox row available for retry.
   const results = await Promise.allSettled(rows.map((row) => publishOne(db, row)));
   let failed = false;
   results.forEach((result, index) => {
@@ -139,7 +138,6 @@ async function main(): Promise<void> {
   let stopping = false;
   let afterTenantId = "";
 
-  // Keep the leader lock until all sends in the current batch have settled.
   process.on("SIGINT", () => { stopping = true; });
   process.on("SIGTERM", () => { stopping = true; });
 
@@ -161,12 +159,9 @@ async function main(): Promise<void> {
         const result = await tick(db, afterTenantId);
         afterTenantId = result.afterTenantId;
         if (result.failed) throw new Error("One or more outbox publications failed");
-        // Waiting after a productive batch adds delay even when work is ready.
         if (result.count === 0 && !stopping) await sleep(POLL_MS);
       } catch (err) {
         console.error("outbox poll tick failed", err);
-        // A query failure may have replaced the session and released its lock.
-        // Disconnect, then reacquire leadership before publishing again.
         isLeader = false;
         await db.$disconnect();
         if (!stopping) await sleep(POLL_MS);

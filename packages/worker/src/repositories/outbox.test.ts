@@ -1,9 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { SQSClient } from "@aws-sdk/client-sqs";
+import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { listUnpublished, markPublished } from "./outbox";
 
-// Opt in against a development database with no pending outbox work.
-// Fixtures and publication updates are rolled back, including on assertion failure.
 describe.skipIf(process.env.RUN_DB_TESTS !== "1")("outbox publication (Postgres)", () => {
   it("rotates across tenants, preserves selection order, and only marks confirmed sends", async () => {
     const { createSingleConnectionPrisma } = await import("@waybill/shared");
@@ -27,7 +25,6 @@ describe.skipIf(process.env.RUN_DB_TESTS !== "1")("outbox publication (Postgres)
         const outboxRows = records.map((event, index) => ({
           id: crypto.randomUUID(), eventId: event.id,
           createdAt: new Date(event.tenantId === tenantIds[0] ? "2020-01-01" : "2021-01-01"),
-          // A previously published busy-tenant row must never be selected again.
           published: index === 0,
         }));
         await tx.outbox.createMany({ data: outboxRows });
@@ -48,17 +45,25 @@ describe.skipIf(process.env.RUN_DB_TESTS !== "1")("outbox publication (Postgres)
         const row = second[0];
         const sqs = new SQSClient({ region: "ap-southeast-2" });
         const failure = new Error("simulated SQS failure");
-        // The SDK has overloaded send signatures. This stub exercises only SendMessage.
         sqs.send = (async () => { throw failure; }) as typeof sqs.send;
         try {
           await expect(publishOne(tx, row, sqs)).rejects.toBe(failure);
           expect((await tx.outbox.findUniqueOrThrow({ where: { id: row.id } })).published).toBe(false);
-          sqs.send = (async () => {
-            expect((await tx.outbox.findUniqueOrThrow({ where: { id: row.id } })).published).toBe(false);
+          const groups: string[] = [];
+          sqs.send = (async (command: SendMessageCommand) => {
+            const body = JSON.parse(command.input.MessageBody!) as { eventId: string; tenantId: string };
+            expect(command.input.MessageGroupId).toBe(body.tenantId);
+            expect(command.input.MessageAttributes?.tenantId.StringValue).toBe(body.tenantId);
+            const selected = second.find((candidate) => candidate.eventId === body.eventId)!;
+            expect((await tx.outbox.findUniqueOrThrow({ where: { id: selected.id } })).published).toBe(false);
+            groups.push(command.input.MessageGroupId!);
             return { MessageId: "test-confirmed", $metadata: {} };
           }) as typeof sqs.send;
           await publishOne(tx, row, sqs);
           expect((await tx.outbox.findUniqueOrThrow({ where: { id: row.id } })).published).toBe(true);
+          await publishOne(tx, second[1], sqs);
+          expect(groups).toEqual([row.event.tenantId, second[1].event.tenantId]);
+          expect(groups[0]).not.toBe(groups[1]);
         } finally {
           sqs.destroy();
         }
