@@ -1,5 +1,6 @@
 import {
   ChangeMessageVisibilityCommand,
+  ChangeMessageVisibilityBatchCommand,
   DeleteMessageCommand,
   ReceiveMessageCommand,
   type Message,
@@ -23,6 +24,8 @@ import {
   recordDeliveryFailure,
   recordDeliverySuccess,
 } from "./delivery/circuit-breaker";
+import { TenantTurns } from "./delivery/tenant-turns";
+import { VisibilityLeases } from "./delivery/visibility";
 import { postWebhook } from "./delivery/http";
 import { processDeliveryBatch, type Acknowledge } from "./delivery/message-batch";
 import { consumeTenantToken } from "./delivery/rate-limiter";
@@ -38,6 +41,8 @@ import {
 const LONG_POLL_SECONDS = 20;
 const VISIBILITY_TIMEOUT_SECONDS = 30;
 const AWS_TIMEOUT_MS = 25_000;
+const RECEIVE_BATCHES = 10;
+let visibility: VisibilityLeases | undefined;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -136,6 +141,7 @@ async function hideUntil(
   receipt: string,
   delayMs: number,
 ): Promise<void> {
+  await visibility?.release(receipt);
   const sqs = createSqsClient();
   await sendWithTimeout(
     (abortSignal) =>
@@ -148,6 +154,37 @@ async function hideUntil(
         { abortSignal },
       ),
     "SQS ChangeMessageVisibility",
+  );
+}
+
+async function deferExcessMessages(queueUrl: string, messages: Message[]): Promise<void> {
+  const receipts = messages.flatMap((message) => message.ReceiptHandle ? [message.ReceiptHandle] : []);
+  await Promise.all(receipts.map((receipt) => visibility?.release(receipt)));
+  const batches: string[][] = [];
+  for (let i = 0; i < receipts.length; i += 10) batches.push(receipts.slice(i, i + 10));
+  const results = await Promise.allSettled(batches.map(async (batch) => {
+    const result = await createSqsClient().send(new ChangeMessageVisibilityBatchCommand({
+      QueueUrl: queueUrl,
+      Entries: batch.map((receipt, index) => ({
+        Id: String(index), ReceiptHandle: receipt, VisibilityTimeout: 30,
+      })),
+    }), { abortSignal: AbortSignal.timeout(8000) });
+    if (result.Failed?.length || result.Successful?.length !== batch.length) {
+      throw new Error(`Incomplete tenant-turn deferral: ${JSON.stringify(result.Failed ?? [])}`);
+    }
+  }));
+  for (const result of results) {
+    if (result.status === "rejected") console.error("tenant-turn deferral failed", result.reason);
+  }
+}
+
+async function acknowledgeMessage(queueUrl: string, receipt: string): Promise<void> {
+  await visibility?.release(receipt);
+  await sendWithTimeout(
+    (abortSignal) => createSqsClient().send(new DeleteMessageCommand({
+      QueueUrl: queueUrl, ReceiptHandle: receipt,
+    }), { abortSignal }),
+    "SQS DeleteMessage",
   );
 }
 
@@ -194,18 +231,7 @@ async function moveToDeadLetter(
   });
   await markDeadLettered(delivery.id, error);
 
-  const sqs = createSqsClient();
-  await sendWithTimeout(
-    (abortSignal) =>
-      sqs.send(
-        new DeleteMessageCommand({
-          QueueUrl: queueUrl,
-          ReceiptHandle: receipt,
-        }),
-        { abortSignal },
-      ),
-    "SQS DeleteMessage",
-  );
+  await acknowledgeMessage(queueUrl, receipt);
   console.log("delivery dead-lettered", {
     eventId: delivery.eventId,
     deliveryId: delivery.id,
@@ -234,7 +260,6 @@ async function handleMessage(
   sqsMessage: Message,
   redis = createRedisClient(),
 ): Promise<Acknowledge | void> {
-  const sqs = createSqsClient();
   const receipt = sqsMessage.ReceiptHandle;
   if (!receipt) {
     throw new Error("SQS message missing ReceiptHandle");
@@ -259,17 +284,7 @@ async function handleMessage(
     console.error("poison SQS message, deleting", {
       messageId: sqsMessage.MessageId,
     });
-    await sendWithTimeout(
-      (abortSignal) =>
-        sqs.send(
-          new DeleteMessageCommand({
-            QueueUrl: queueUrl,
-            ReceiptHandle: receipt,
-          }),
-          { abortSignal },
-        ),
-      "SQS DeleteMessage",
-    );
+    await acknowledgeMessage(queueUrl, receipt);
     return;
   }
 
@@ -292,17 +307,7 @@ async function handleMessage(
 
   const existing = await findByEventAndUrl(parsed.eventId, targetUrl);
   if (existing?.status === "DEAD_LETTERED" || existing?.status === "SUCCEEDED") {
-    await sendWithTimeout(
-      (abortSignal) =>
-        sqs.send(
-          new DeleteMessageCommand({
-            QueueUrl: queueUrl,
-            ReceiptHandle: receipt,
-          }),
-          { abortSignal },
-        ),
-      "SQS DeleteMessage",
-    );
+    await acknowledgeMessage(queueUrl, receipt);
     console.log("delivery already complete, deleted SQS message", {
       eventId: parsed.eventId,
       status: existing.status,
@@ -408,17 +413,7 @@ async function handleMessage(
   const afterSuccess = await recordDeliverySuccess(redis, targetUrl);
   await markSucceeded(delivery.id);
   return async () => {
-    await sendWithTimeout(
-      (abortSignal) =>
-        sqs.send(
-          new DeleteMessageCommand({
-            QueueUrl: queueUrl,
-            ReceiptHandle: receipt,
-          }),
-          { abortSignal },
-        ),
-      "SQS DeleteMessage",
-    );
+    await acknowledgeMessage(queueUrl, receipt);
     console.log("delivery succeeded", {
       eventId: parsed.eventId,
       deliveryId: delivery.id,
@@ -434,41 +429,92 @@ async function main(): Promise<void> {
   const redis = createRedisClient();
   await redis.connect();
 
-  console.log("delivery worker started");
+  visibility = new VisibilityLeases(async (receipts) => {
+    const result = await sqs.send(new ChangeMessageVisibilityBatchCommand({
+      QueueUrl: queueUrl,
+      Entries: receipts.map((receipt, index) => ({
+        Id: String(index), ReceiptHandle: receipt, VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
+      })),
+    }), { abortSignal: AbortSignal.timeout(8000) });
+    if (result.Failed?.length) console.error("visibility renewal entries failed", result.Failed);
+    return new Set((result.Successful ?? []).flatMap((entry) => {
+      const receipt = receipts[Number(entry.Id)];
+      return receipt ? [receipt] : [];
+    }));
+  }, (err) => console.error("visibility renewal failed", err));
+  const leases = visibility;
+  console.log("delivery worker started", { maxBufferedMessages: RECEIVE_BATCHES * 10 });
 
-  while (true) {
-    try {
-      const received = await sendWithTimeout(
-        (abortSignal) =>
-          sqs.send(
-            new ReceiveMessageCommand({
-              QueueUrl: queueUrl,
-              // Amortize receive latency across a full batch. Only completed
-              // deliveries' SQS acknowledgements overlap within the batch.
-              MaxNumberOfMessages: 10,
-              WaitTimeSeconds: LONG_POLL_SECONDS,
-              VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
-              MessageAttributeNames: ["All"],
-            }),
-            { abortSignal },
-          ),
-        "SQS ReceiveMessage",
-      );
-
-      const messages = received.Messages ?? [];
-      await processDeliveryBatch(
-        messages,
-        (message) => handleMessage(queueUrl, targetUrl, message, redis),
-        (message, err) => {
-          console.error("handle message failed", {
-            messageId: message.MessageId,
-            err,
+  try {
+    while (true) {
+      type ReceiveResult = { id: number; messages: Message[]; error?: unknown };
+      const pendingReceives = new Map<number, Promise<ReceiveResult>>();
+      let receiveFailed = false;
+      const turns = new TenantTurns();
+      const deferred: Message[] = [];
+      for (let id = 0; id < RECEIVE_BATCHES; id++) {
+        const pending = sendWithTimeout(
+          (abortSignal) => sqs.send(new ReceiveMessageCommand({
+            QueueUrl: queueUrl,
+            MaxNumberOfMessages: 10,
+            WaitTimeSeconds: LONG_POLL_SECONDS,
+            VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
+            MessageAttributeNames: ["All"],
+            MessageSystemAttributeNames: ["MessageGroupId"],
+          }), { abortSignal }),
+          "SQS ReceiveMessage",
+        ).then((response) => {
+          const messages = response.Messages ?? [];
+          for (const message of messages) {
+            if (message.ReceiptHandle) leases.track(message.ReceiptHandle);
+          }
+          console.log("SQS receive buffer", {
+            received: messages.length,
+            buffered: leases.size,
+            groups: [...new Set(messages.map((message) => message.Attributes?.MessageGroupId ?? "unassigned"))],
           });
-        },
-      );
-    } catch (err) {
-      console.error("receive loop failed", err);
+          return { id, messages };
+        }).catch((error: unknown) => ({ id, messages: [], error }));
+        pendingReceives.set(id, pending);
+      }
+      while (pendingReceives.size) {
+        const result = await Promise.race(pendingReceives.values());
+        pendingReceives.delete(result.id);
+        if (result.error !== undefined) {
+          receiveFailed = true;
+          console.error("receive failed", result.error);
+        }
+        const messages = result.messages;
+        await processDeliveryBatch(messages, async (message) => {
+          const receipt = message.ReceiptHandle;
+          if (receipt && !leases.isCurrent(receipt)) {
+            await leases.release(receipt);
+            console.warn("skipping message after visibility ownership became uncertain", { messageId: message.MessageId });
+            return;
+          }
+          const parsed = parseQueueMessage(message.Body ?? "");
+          if (parsed && !turns.take(parsed.tenantId)) {
+            deferred.push(message);
+            return;
+          }
+          try {
+            const acknowledge = await handleMessage(queueUrl, targetUrl, message, redis);
+            if (!acknowledge && receipt) await leases.release(receipt);
+            return acknowledge;
+          } catch (err) {
+            if (receipt) await leases.release(receipt);
+            throw err;
+          }
+        }, (message, err) => console.error("handle message failed", { messageId: message.MessageId, err }));
+      }
+      await deferExcessMessages(queueUrl, deferred);
+      if (receiveFailed) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
     }
+  } finally {
+    await leases.stop();
+    await redis.quit();
   }
 }
 
