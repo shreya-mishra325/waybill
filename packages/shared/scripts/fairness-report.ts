@@ -5,6 +5,7 @@ export type Sample = {
   status?: number;
   eventId?: string;
   error?: string;
+  busyPendingAtSubmission?: number;
 };
 
 export function summarize(samples: Sample[], receipts: Map<string, number>) {
@@ -29,13 +30,18 @@ export function summarize(samples: Sample[], receipts: Map<string, number>) {
 export function fairnessReport(
   samples: Sample[],
   receipts: Map<string, number>,
-  limits: { busyRequests: number; quietP95Ms: number; busyFinishedAt: number },
+  limits: {
+    busyRequests: number; quietP95Ms: number; busyFinishedAt: number;
+    backlog?: { publishedBeforeStart: number; visibleBeforeStart: number };
+  },
 ) {
   const baseline = summarize(samples.filter((s) => s.phase === "baseline"), receipts);
   const busy = summarize(samples.filter((s) => s.tenant === "busy"), receipts);
   const quietSamples = samples.filter((s) => s.tenant === "quiet" && s.phase === "load");
   const quiet = summarize(quietSamples, receipts);
-  const overlappingQuiet = quietSamples.filter((s) => s.sentAt <= limits.busyFinishedAt).length;
+  const overlappingQuiet = quietSamples.filter((s) => limits.backlog
+    ? (s.busyPendingAtSubmission ?? 0) > 0
+    : s.sentAt <= limits.busyFinishedAt).length;
   const failures: string[] = [];
   if (baseline.accepted < 3 || baseline.delivered !== baseline.submitted || baseline.errors) {
     failures.push("Baseline did not deliver every request (minimum 3).");
@@ -43,7 +49,12 @@ export function fairnessReport(
   if (busy.submitted !== limits.busyRequests || busy.accepted === 0 || busy.errors) {
     failures.push("Busy traffic was incomplete, entirely rejected, or had request errors.");
   }
-  if (overlappingQuiet < 3) failures.push("Fewer than 3 quiet requests overlapped the busy burst.");
+  if (limits.backlog && (busy.accepted !== limits.busyRequests ||
+      limits.backlog.publishedBeforeStart !== limits.busyRequests ||
+      limits.backlog.visibleBeforeStart < limits.busyRequests)) {
+    failures.push("The full accepted backlog was not confirmed before worker start.");
+  }
+  if (overlappingQuiet < 3) failures.push("Fewer than 3 quiet requests overlapped busy traffic.");
   if (quiet.submitted < 3 || quiet.delivered !== quiet.submitted || quiet.errors) {
     failures.push("Quiet traffic was rejected, failed, or did not finish delivery.");
   }

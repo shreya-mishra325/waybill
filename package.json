@@ -16,7 +16,8 @@
     "dev:receiver": "bun run --watch packages/shared/scripts/test-receiver.ts",
     "dev:poller": "bun run --watch packages/worker/src/outbox-poller.ts",
     "ping:receiver": "bun run packages/shared/scripts/ping-receiver.ts",
-    "test:fairness": "bun run packages/shared/scripts/test-fairness.ts"
+    "test:fairness": "bun run packages/shared/scripts/test-fairness.ts",
+    "test:fairness:backlog": "bun run packages/shared/scripts/test-fairness.ts --backlog"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

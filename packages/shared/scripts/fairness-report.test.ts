@@ -60,3 +60,40 @@ describe("fairness report", () => {
     expect(fairnessReport(samples, receipts, limits).passed).toBe(false);
   });
 });
+
+
+describe("accepted backlog report", () => {
+  function backlogFixture() {
+    const value = fixture();
+    for (const sample of value.samples) {
+      if (sample.phase === "load" && sample.tenant === "quiet") sample.busyPendingAtSubmission = 1;
+    }
+    return { ...value, limits: {
+      ...value.limits, busyFinishedAt: -1,
+      backlog: { publishedBeforeStart: 1, visibleBeforeStart: 1 },
+    } };
+  }
+
+  it("uses outstanding busy deliveries to prove overlap after preloading has ended", () => {
+    const { samples, receipts, limits } = backlogFixture();
+    expect(fairnessReport(samples, receipts, limits).passed).toBe(true);
+  });
+
+  it("rejects an unconfirmed or partially admitted preload", () => {
+    const { samples, receipts, limits } = backlogFixture();
+    expect(fairnessReport(samples, receipts, {
+      ...limits, backlog: { publishedBeforeStart: 0, visibleBeforeStart: 1 },
+    }).passed).toBe(false);
+    expect(fairnessReport(samples, receipts, {
+      ...limits, backlog: { publishedBeforeStart: 1, visibleBeforeStart: 0 },
+    }).passed).toBe(false);
+    samples.push({ tenant: "busy", phase: "load", sentAt: 0, status: 429 });
+    expect(fairnessReport(samples, receipts, { ...limits, busyRequests: 2 }).passed).toBe(false);
+  });
+
+  it("fails when quiet probes begin after the busy backlog has drained", () => {
+    const { samples, receipts, limits } = backlogFixture();
+    for (const sample of samples) sample.busyPendingAtSubmission = 0;
+    expect(fairnessReport(samples, receipts, limits).passed).toBe(false);
+  });
+});
