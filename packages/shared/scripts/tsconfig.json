@@ -3,5 +3,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["./test-fairness.ts", "./fairness-report*.ts"]
+  "include": ["./test-fairness.ts", "./fairness-report*.ts", "./webhook-receiver.ts", "./test-receiver.ts", "./ping-receiver.ts"]
 }
