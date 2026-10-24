@@ -65,7 +65,7 @@ flowchart LR
   replay -->|"Re-send eligible delivery"| sqs
 ```
 
-HMAC signing, the dashboard, replay, and the read replica are planned. Automatic retries use `ChangeMessageVisibility` on the existing SQS message. Manual replay is a separate Phase 7 operation. On retry exhaustion, the worker archives the payload and persists the dead-letter state before calling `DeleteMessage`. Delivery attempts are at least once; receivers must handle duplicates.
+HMAC signing is implemented and verified with local HTTP tests. The dashboard, replay, and the read replica are planned. Automatic retries use `ChangeMessageVisibility` on the existing SQS message. Manual replay is a separate Phase 7 operation. On retry exhaustion, the worker archives the payload and persists the dead-letter state before calling `DeleteMessage`. Delivery attempts are at least once; receivers must handle duplicates.
 
 **Tenant fairness:** the publisher sets `MessageGroupId = tenantId` on every outgoing message. This enables [SQS fair queue scheduling](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fair-queues.html) on the existing standard queue. Workers retain per-tenant Redis token buckets, bounded receive buffering, and an explicit ten-message per-tenant turn budget. Excess selections are deferred in visibility batches. Buffered reservations are renewed and released before deliberate retry delays or deletion. Queue scheduling reduces noisy-tenant interference; Redis enforces the delivery budget. FIFO ordering remains an optional Phase 9 change. The accepted-backlog test validates the combined behavior.
 
@@ -165,7 +165,9 @@ Done when: attempt timestamps grow exponentially, and exhausted events land in `
 - **Done when:** simulate one tenant firing 10k events while another tenant's events still get delivered promptly, even though both share the same SQS queue.
 
 ### Phase 6 - Security: HMAC Signing & Verification
-- Sign each webhook payload with a per-tenant secret (HMAC-SHA256), send as a header. Build a tiny example receiver-side verification snippet.
+- [x] Sign each webhook payload with a per-tenant secret (HMAC-SHA256) and send a signature header.
+- [x] Provide an example receiver that verifies raw request bytes and rejects tampered payloads.
+- Notes: [Phase 6](./PHASE_6_NOTES.md). Local HTTP verification and a live AWS smoke test passed, including inline and S3-backed events. Tampered requests returned HTTP 401.
 - **Done when:** a tampered payload fails verification on the receiver side.
 
 ### Phase 7 - Dashboard/API for Observability

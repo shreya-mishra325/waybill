@@ -6,7 +6,7 @@ The [PDF](./waybill-architecture.pdf) is an earlier Phases 0-5 snapshot. The Mer
 
 ## 1. System overview
 
-The delivery path runs left to right. Purple nodes indicate planned Phase 6-7 components. Solid edges represent requests and data operations; dashed edges represent control checks or replication.
+The delivery path runs left to right. Purple nodes indicate planned Phase 7 components. Solid edges represent requests and data operations; dashed edges represent control checks or replication.
 
 ```mermaid
 flowchart LR
@@ -59,7 +59,7 @@ flowchart LR
   replay -->|"Re-send eligible delivery"| queue
 
   classDef planned fill:#f3e8ff,stroke:#7e22ce,color:#3b0764;
-  class queries,replay,signer,dashboard,replica planned;
+  class queries,replay,dashboard,replica planned;
 ```
 
 HMAC signing is part of the delivery worker. Observability and replay are API modules. The outbox poller and delivery worker are separate processes within `packages/worker`.
@@ -213,8 +213,8 @@ waybill/
 │   │       ├── index.ts                 SQS receive and delivery orchestration
 │   │       ├── outbox-poller.ts         Separate publisher process and leader lock
 │   │       ├── delivery/                HTTP, backoff, circuit breaker, rate limits
-│   │       │                           HMAC signing planned in Phase 6
-│   │       ├── repositories/            Outbox, deliveries, dead letters
+│   │       │                           HMAC signing with per-tenant secrets
+│   │       ├── repositories/            Outbox, deliveries, dead letters, tenant secrets
 │   │       └── jobs/                    Existing placeholder
 │   ├── shared/
 │   │   ├── src/                        Prisma, AWS clients, queue and rate-limit types
@@ -239,7 +239,7 @@ The dashboard calls the API; it never receives database credentials. API layerin
 | Phases 0-3 | Ingestion, outbox, leader election, delivery, retries, dead letters | Implemented with phase notes |
 | Phase 4 | Per-destination circuit breaker with one recovery probe | Implemented; atomic cross-worker probe coordination still needs hardening |
 | Phase 5 | Tenant limits at ingestion and dispatch; demonstrated noisy-tenant fairness | Independent buckets, tenant rotation in publication, and overlapping SQS acknowledgements implemented; rate-limited 10k-request check passed at 25.7-second quiet p95; accepted-backlog p95 passed at 25.2 seconds with explicit tenant turns and batched deferral; quiet maximum 63.5 seconds and busy-throughput cost remain hardening work |
-| Phase 6 | HMAC signing and receiver verification | Planned; tenant secret field already exists |
+| Phase 6 | HMAC signing and receiver verification | Implemented; local HTTP tests and live AWS smoke test passed, including S3-backed delivery and tamper rejection |
 | Phase 7 | Dashboard, observability API, payload viewing, replay, read replica | Planned |
 | Phase 8 | Measure bottlenecks and harden the system | Planned; shard deliveries by tenant only if measurements justify it |
 | Phase 9 | FIFO ordering, Prometheus/Grafana, multiple regions, Kafka exploration | Optional extensions, outside the baseline diagram |
