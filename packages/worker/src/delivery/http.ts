@@ -1,3 +1,5 @@
+import { signWebhook, WEBHOOK_SIGNATURE_HEADER } from "../../../shared/src/webhook-signature";
+
 const HTTP_TIMEOUT_MS = 10_000;
 
 export type WebhookResult =
@@ -7,15 +9,19 @@ export type WebhookResult =
 export async function postWebhook(
   url: string,
   body: unknown,
+  secret: string,
 ): Promise<WebhookResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
 
   try {
+    const serialized = JSON.stringify(body);
+    if (serialized === undefined) throw new Error("Webhook body must be JSON serializable");
+    const signature = signWebhook(serialized, secret);
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json", [WEBHOOK_SIGNATURE_HEADER]: signature },
+      body: serialized,
       signal: controller.signal,
     });
 

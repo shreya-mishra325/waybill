@@ -29,6 +29,7 @@ import { VisibilityLeases } from "./delivery/visibility";
 import { postWebhook } from "./delivery/http";
 import { processDeliveryBatch, type Acknowledge } from "./delivery/message-batch";
 import { consumeTenantToken } from "./delivery/rate-limiter";
+import { findTenantSigningSecret } from "./repositories/tenants";
 import { createDeadLetter } from "./repositories/dead-letters";
 import {
   findByEventAndUrl,
@@ -337,7 +338,9 @@ async function handleMessage(
   });
 
   let payload: unknown;
+  let signingSecret: string;
   try {
+    signingSecret = await findTenantSigningSecret(parsed.tenantId);
     payload = await loadPayload(parsed);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -359,7 +362,7 @@ async function handleMessage(
       queueUrl,
       receipt,
     );
-    console.error("payload load failed, scheduled retry", {
+    console.error("webhook preparation failed, scheduled retry", {
       eventId: parsed.eventId,
       error,
       nextAttemptAt: when.toISOString(),
@@ -372,7 +375,7 @@ async function handleMessage(
     tenantId: parsed.tenantId,
     type: parsed.type,
     payload,
-  });
+  }, signingSecret);
 
   if (!result.ok) {
     const afterFailure = await recordDeliveryFailure(redis, targetUrl);
