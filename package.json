@@ -20,7 +20,10 @@
     "test:fairness:backlog": "bun run packages/shared/scripts/test-fairness.ts --backlog",
     "setup:replica": "bun run packages/shared/scripts/setup-replica.ts",
     "test:replica": "bun run packages/shared/scripts/test-replica.ts",
-    "test:replay": "bun run packages/shared/scripts/test-replay.ts"
+    "test:replay": "bun run packages/shared/scripts/test-replay.ts",
+    "dev:web": "bun run --cwd packages/web dev",
+    "build:web": "bun run --cwd packages/web build",
+    "check:web": "bun run --cwd packages/web typecheck"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

@@ -1,0 +1,39 @@
+:root {
+  --wb-canvas: #0e4557;
+  --wb-ink-on-dark: #f9f6ef;
+  --wb-muted-on-dark: #d9e5e8;
+  --wb-accent: #ea5926;
+  --wb-action: #ca4424;
+  --wb-surface: #f8f6ef;
+  --wb-ink-on-light: #173746;
+  --wb-ink-secondary: #517080;
+  --wb-accent-on-light: #b44322;
+  --wb-code-font: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --wb-border-light: #d9ded9;
+  --wb-route: #d5e4e6;
+  --wb-network-width: 0.75;
+  --wb-network-opacity: 0.44;
+  --wb-network-secondary-opacity: 0.14;
+  --wb-network-packet-opacity: 0.92;
+  --wb-terminal-surface: #0b202b;
+  --wb-terminal-chrome: #132e3a;
+  --wb-terminal-border: #31515d;
+  --wb-terminal-text: #e7edf0;
+  --wb-terminal-muted: #a3b8c1;
+  --wb-terminal-string: #bfd7ae;
+  --wb-terminal-accent: #ffaf87;
+  --wb-container: 1260px;
+  --wb-gutter: 40px;
+  --wb-heading-size: clamp(76px, 6.6vw, 102px);
+  --wb-heading-leading: 0.95;
+  --wb-heading-tracking: -0.035em;
+}
+
+@theme inline {
+  --color-canvas: var(--wb-canvas);
+  --color-foreground: var(--wb-ink-on-dark);
+  --color-muted: var(--wb-muted-on-dark);
+  --color-accent: var(--wb-accent);
+  --font-sans: var(--font-ui), Arial, sans-serif;
+  --font-serif: var(--font-editorial), Georgia, serif;
+}
