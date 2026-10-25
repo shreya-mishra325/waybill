@@ -34,3 +34,16 @@ docker-compose.override.yml
 
 # keys
 *.pem
+
+# Next.js
+.next/
+out/
+
+# local design references
+/docs/PUBLIC_SITE_DESIGN.md
+/docs/PUBLIC_*_REVIEW.md
+/docs/ANIMATION_SPEC.md
+/docs/CODEX_VISUAL_QA.md
+/docs/design-references/
+/docs/codex/
+/waybill_public_site_final_markdown_kit/
