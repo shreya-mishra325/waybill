@@ -27,6 +27,22 @@ bun run dev:worker
 
 `GET http://localhost:3000/health` should return `{ "status": "ok" }`.
 
+## Local read replica
+
+After the primary database is initialized:
+
+```bash
+bun run setup:replica
+```
+
+Set `READ_REPLICA_DATABASE_URL` in `.env` to the local connection shown by setup, then verify replication:
+
+```bash
+bun run test:replica
+```
+
+The replica uses its own Docker volume and port 15433. Setup details and the replication-lag test are in [Phase 7 notes](docs/PHASE_7_NOTES.md).
+
 ## Repo layout
 
 ```

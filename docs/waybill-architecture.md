@@ -1,12 +1,12 @@
 # Waybill - target architecture
 
-Target architecture for Phases 0-8 of [the project guide](./project-guide.md). Implementation status is tracked in Section 6.
+Target architecture for Phases 0-9 of [the project guide](./project-guide.md). Implementation status is tracked in Section 6.
 
 The [PDF](./waybill-architecture.pdf) is an earlier Phases 0-5 snapshot. The Mermaid diagrams below describe the current target.
 
 ## 1. System overview
 
-The delivery path runs left to right. Purple nodes indicate planned Phase 7 components. Solid edges represent requests and data operations; dashed edges represent control checks or replication.
+The delivery path runs left to right. Purple nodes indicate planned components. Solid edges represent requests and data operations; dashed edges represent control checks or replication.
 
 ```mermaid
 flowchart LR
@@ -27,7 +27,7 @@ flowchart LR
   end
 
   subgraph stores["Data and infrastructure"]
-    primary[("PostgreSQL primary<br/>tenants, events, outbox,<br/>deliveries, dead_letters")]
+    primary[("PostgreSQL primary<br/>tenants, events, outbox,<br/>deliveries, dead_letters, replays")]
     replica[("PostgreSQL read replica - Phase 7<br/>Separate read connection")]
     queue["Amazon SQS standard queue<br/>At-least-once transport<br/>Tenant fair scheduling"]
     redis[("Redis<br/>Tenant token buckets,<br/>destination circuit breakers,<br/>hot configuration cache")]
@@ -55,11 +55,10 @@ flowchart LR
   queries -->|"Retrieve archived payload"| s3
   primary -.->|"Asynchronous replication"| replica
   dashboard -->|"Request manual replay"| replay
-  replay -->|"Validate current state; write replay state"| primary
-  replay -->|"Re-send eligible delivery"| queue
+  replay -->|"Validate primary state; commit replay event + outbox + audit"| primary
 
   classDef planned fill:#f3e8ff,stroke:#7e22ce,color:#3b0764;
-  class queries,replay,dashboard,replica planned;
+  class dashboard planned;
 ```
 
 HMAC signing is part of the delivery worker. Observability and replay are API modules. The outbox poller and delivery worker are separate processes within `packages/worker`.
@@ -166,6 +165,7 @@ sequenceDiagram
   participant R as PostgreSQL read replica
   participant P as PostgreSQL primary
   participant S as S3
+  participant O as Outbox poller
   participant Q as SQS
   participant W as Delivery worker
 
@@ -180,17 +180,23 @@ sequenceDiagram
   A-->>D: View data
 
   U->>D: Replay selected failed delivery
-  D->>A: Submit replay command
-  A->>P: Validate latest state and prepare eligible delivery
-  Note over A,P: Define replay identity, attempt reset, and audit history in Phase 7
-  A->>Q: SendMessage with payload or archive reference
+  D->>A: Submit replay command with idempotency key
+  A->>P: Read source state and previous command
+  A->>S: Validate archived payload
+  A->>P: Commit new event, outbox row, and replay audit
+  Note over A,P: Original failure remains; repeated key returns stored replay
+  A-->>D: 202 with replay and new event IDs
+  O->>P: Read unpublished replay outbox
+  O->>Q: SendMessage with archive reference and tenant group
+  Q-->>O: Confirm publication
+  O->>P: Mark outbox published
   Q-->>W: Message received through long polling
   W->>W: Run normal rate-limit, circuit, signing, and delivery path
   W->>P: Persist new outcome
   P-->>R: Replicate updated records
 ```
 
-Replay semantics are pending Phase 7. Replayed messages must retain `MessageGroupId = tenantId` for fair scheduling. The worker discards messages associated with a `DEAD_LETTERED` delivery, so replay must transition the delivery to an eligible state or create a new delivery record. The implementation must define attempt accounting, audit history, command idempotency, and recovery from a crash between the database write and SQS publication. Extending the transactional outbox is one option.
+Replay creates a new event and outbox row, with an audit record linking the original dead letter. The original delivery remains unchanged; the new event starts with a fresh retry budget. A tenant-scoped idempotency key and one-replay-per-source constraint prevent duplicate commands. The existing publisher sends the replay with `MessageGroupId = tenantId` and an archive reference. A crash after API commit leaves durable pending outbox work. The receiver sees the new event ID; the original ID is retained in the replay response and audit relation.
 
 ## 5. Target repository layout
 
@@ -205,7 +211,7 @@ waybill/
 │   │       ├── routes/                  Ingestion; observability/replay planned
 │   │       ├── controllers/             HTTP input/output and error mapping
 │   │       ├── services/                Business rules and transactions
-│   │       ├── repositories/            DB access; replica reads planned
+│   │       ├── repositories/            DB access; delivery history reads use replica
 │   │       ├── middleware/              Placeholder for cross-cutting HTTP logic
 │   │       └── rate-limit.ts            Ingestion token enforcement
 │   ├── worker/
@@ -218,7 +224,7 @@ waybill/
 │   │       └── jobs/                    Existing placeholder
 │   ├── shared/
 │   │   ├── src/                        Prisma, AWS clients, queue and rate-limit types
-│   │   │                               Separate replica client planned in Phase 7
+│   │   │                               Guarded replica client; local replica verified
 │   │   ├── prisma/
 │   │   │   ├── schema.prisma
 │   │   │   └── migrations/
@@ -240,12 +246,27 @@ The dashboard calls the API; it never receives database credentials. API layerin
 | Phase 4 | Per-destination circuit breaker with one recovery probe | Implemented; atomic cross-worker probe coordination still needs hardening |
 | Phase 5 | Tenant limits at ingestion and dispatch; demonstrated noisy-tenant fairness | Independent buckets, tenant rotation in publication, and overlapping SQS acknowledgements implemented; rate-limited 10k-request check passed at 25.7-second quiet p95; accepted-backlog p95 passed at 25.2 seconds with explicit tenant turns and batched deferral; quiet maximum 63.5 seconds and busy-throughput cost remain hardening work |
 | Phase 6 | HMAC signing and receiver verification | Implemented; local HTTP tests and live AWS smoke test passed, including S3-backed delivery and tamper rejection |
-| Phase 7 | Dashboard, observability API, payload viewing, replay, read replica | Planned |
-| Phase 8 | Measure bottlenecks and harden the system | Planned; shard deliveries by tenant only if measurements justify it |
-| Phase 9 | FIFO ordering, Prometheus/Grafana, multiple regions, Kafka exploration | Optional extensions, outside the baseline diagram |
+| Phase 7 | Dashboard, observability API, payload viewing, replay, read replica | Local replica, delivery history, status summaries, dead-letter browsing, S3 payload reads, and idempotent outbox replay implemented; dashboard and hosted replica pending |
+| Phase 8 | Prometheus metrics and Grafana service dashboards | Planned after the tenant dashboard and before Phase 9; moved forward from the stretch goals |
+| Phase 9 | Measure bottlenecks and harden the system | Planned using Phase 8 metrics; shard deliveries by tenant only if measurements justify it |
+| Phase 10 | FIFO ordering, multiple regions, Kafka exploration | Optional experiments after the measured baseline; Prometheus/Grafana are scoped in Phase 8 |
 
 Delivery currently uses a single configured `RECEIVER_URL`. Per-tenant destination resolution requires a configuration API and schema changes that are not yet specified.
 
 Production requirements include external-call deadlines, graceful shutdown, liveness/readiness probes, structured Pino logs with correlation IDs, Sentry, scoped IAM, environment-based secrets, CI migration checks, database backups, and S3 lifecycle policies. Implementation status must be verified against the guide's readiness checklist. Successful-delivery archiving has no assigned phase; the diagrams cover claim-check storage and dead-letter archives.
 
-Local infrastructure consists of containerized PostgreSQL and Redis with AWS-hosted SQS and S3. Initial deployment targets Railway or Render with managed PostgreSQL and Redis. A full AWS deployment is optional. Any sharding introduced after load testing must account for repository routing, cross-tenant queries, and replica reads.
+Local infrastructure consists of containerized PostgreSQL primary and optional physical replica, plus Redis, with AWS-hosted SQS and S3. The hosting provider is not selected. Staging must host the API, publisher, worker, dashboard, managed PostgreSQL primary and physical replica, Redis, and service monitoring. CI and deployment readiness checks precede a public release; see the project guide. A full AWS deployment is optional. Any sharding introduced after load testing must account for repository routing, cross-tenant queries, and replica reads.
+
+## 7. Service metrics (Phase 8, planned)
+
+The implementation order is the Phase 7 tenant dashboard, Phase 8 service metrics, then Phase 9 load testing. Prometheus will scrape the API, publisher, and worker. Grafana will query Prometheus for service dashboards. The tenant dashboard continues to use the observability API and PostgreSQL replica for durable delivery history.
+
+```mermaid
+flowchart LR
+  prometheus["Prometheus - planned"] -->|"Scrape /metrics"| api["API process"]
+  prometheus -->|"Scrape /metrics"| poller["Outbox publisher process"]
+  prometheus -->|"Scrape /metrics"| worker["Delivery worker process"]
+  grafana["Grafana - planned"] -->|"Query metrics"| prometheus
+```
+
+Metric labels use bounded service, operation, outcome, and reason values. Tenant IDs, event IDs, destination URLs, and free-form errors remain outside labels. Scraping does not trigger expensive database or AWS calls, and delivery does not depend on Prometheus or Grafana availability. Phase 8 includes a measured overhead check before the Phase 9 baseline.

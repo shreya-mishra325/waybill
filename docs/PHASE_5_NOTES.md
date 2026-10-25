@@ -1,6 +1,6 @@
 # Phase 5 - Rate limiting and tenant fairness
 
-Status: the rate-limited 10k-request checkpoint passed after publisher and worker changes. Sustained dispatch-pressure coverage remains pending. The original run exceeded the 30-second quiet-tenant threshold.
+The first fairness test showed that per-tenant rate limits were not enough: quiet-tenant p95 reached 226 seconds. Publisher scheduling and worker changes brought the request-burst result below 30 seconds. A separate test with 1,000 accepted events exposed another delay in dispatch. Explicit tenant turns brought that test below 30 seconds too, at the cost of slower busy-tenant completion.
 
 ## Independent budgets
 
@@ -17,15 +17,15 @@ Ingestion returns HTTP 429 with `Retry-After` when its bucket is exhausted. The 
 
 Existing unscoped keys expire through their TTL. New scoped keys start with full capacity, so deploying this change resets the available burst budget once.
 
-## Regression coverage
+## Limiter tests
 
 The limiter tests verify burst exhaustion, refill, and isolation between scopes and tenants. The isolation test uses an in-memory implementation of the Redis EVAL interface to check key routing. It does not verify Lua execution, concurrent Redis access, or SQS scheduling.
 
-## Remaining checkpoint
+## Limits of these results
 
 The request-burst and 1,000-accepted-event scenarios pass the local p95 criterion. The latest run still had a 63,544 ms quiet maximum and a 513,619 ms busy maximum. Further work should reduce latency tails and quantify the busy-throughput cost before treating this as a production service guarantee. Measurements use one worker and a fast local receiver; larger accepted workloads remain unmeasured.
 
-The test must exercise the API, outbox poller, Redis, SQS, worker, and receiver. Token-bucket unit tests alone do not establish fairness across the full pipeline.
+Token-bucket unit tests check the limiter. Fairness has to be measured across the API, outbox poller, Redis, SQS, worker, and receiver because delays can occur before or after the bucket check.
 
 ## Fairness runner
 
@@ -41,39 +41,37 @@ The cursor is process-local and resets on leader takeover. Selection is determin
 
 Run the repository integration test against a development database with no pending outbox rows. Fixtures and publication updates are rolled back:
 
-```powershell
-$env:RUN_DB_TESTS = '1'
-bun test packages/worker/src/repositories/outbox.test.ts
-Remove-Item Env:RUN_DB_TESTS
+```bash
+RUN_DB_TESTS=1 bun test packages/worker/src/repositories/outbox.test.ts
 ```
 
 ### Running the measurement
 
-`bun run test:fairness` creates two tenants, runs three baseline requests, then submits 10,000 busy-tenant requests with concurrency 20 while submitting one quiet-tenant request per second. Requests rejected with HTTP 429 are counted separately and are not retried. This measures ingestion protection and delivery latency together; it does not claim that all 10,000 requests reached SQS.
+`bun run test:fairness` creates two tenants, runs three baseline requests, then submits 10,000 busy-tenant requests with concurrency 20 while submitting one quiet-tenant request per second. Requests rejected with HTTP 429 are counted separately and are not retried. This measures ingestion protection and delivery latency together. Only accepted requests enter the delivery pipeline.
 
 The runner hosts a receiver at `RECEIVER_URL` and measures time from request submission to first webhook arrival. Duplicate deliveries do not inflate completion counts. Stop `dev:receiver` before running it. Use the development queue and keep unrelated producers and workers stopped during the measurement. The receiver acknowledges unrelated messages but counts them separately.
 
 Start PostgreSQL and Redis, then run the API, poller, and worker in separate terminals:
 
-```powershell
+```bash
 docker compose up -d postgres redis
 ```
 
-```powershell
+```bash
 bun run dev:api
 ```
 
-```powershell
+```bash
 bun run dev:poller
 ```
 
-```powershell
+```bash
 bun run dev:worker
 ```
 
 Once those processes are running:
 
-```powershell
+```bash
 bun run test:fairness
 ```
 
@@ -88,13 +86,13 @@ The worker and runner must use the same `RECEIVER_URL`. `API_URL` defaults to `h
 | `FAIRNESS_TIMEOUT_MS` | `600000` | Overall measurement deadline |
 | `FAIRNESS_REPORT_PATH` | `logs/fairness-{runId}.json` | Report path, including per-request data |
 
-The latency threshold is a test criterion, not a production SLO. Fix it before the run. A passing result requires a completed baseline, all requested busy submissions, at least one accepted busy event, at least three quiet submissions overlapping the busy burst, delivery of every accepted event, no rejected quiet requests, no request errors, and quiet-tenant p95 within the threshold. An incomplete run exits nonzero. Reports distinguish HTTP rejection, request failure, pending delivery, and completed delivery.
+The latency threshold is a test criterion, not a production SLO. Set it before the run. A passing result requires a completed baseline, all requested busy submissions, at least one accepted busy event, at least three quiet submissions overlapping the busy burst, delivery of every accepted event, no rejected quiet requests, no request errors, and quiet-tenant p95 within the threshold. An incomplete run exits nonzero. Reports distinguish HTTP rejection, request failure, pending delivery, and completed delivery.
 
-The runner stops its receiver when the measurement finishes. If the run times out, accepted events may remain in the pipeline. Start `dev:receiver` at the same URL to drain them before another run.
+The runner stops its receiver when the measurement finishes. A timeout can leave accepted events in the pipeline. Remaining work needs to drain before another run, using a test receiver that accepts the generated tenants. The Phase 6 example receiver accepts only its configured tenant, so it cannot drain all fairness-test traffic.
 
-Validate the runner without sending events:
+Local checks without submitting events:
 
-```powershell
+```bash
 bun test
 bun run test:fairness --help
 bun run node_modules/typescript/bin/tsc -p packages/shared/scripts/tsconfig.json --noEmit
@@ -110,21 +108,21 @@ Run ID: `9caac609-de5e-496c-afe1-b7bfa4b8141b`. Local report: `logs/fairness-pha
 | Busy burst | 10,000 | 147 | 9,853 | 147 | 224,275 ms |
 | Quiet during burst | 13 | 13 | 0 | 13 | 226,352 ms |
 
-All 13 quiet submissions overlapped the busy burst. There were no request errors, duplicate arrivals, unrelated deliveries, or receiver errors. The runner exited with failure because quiet-tenant p95 exceeded 30,000 ms. With 13 samples, the nearest-rank p95 is also the maximum; this is a checkpoint measurement rather than a statistically robust latency benchmark.
+All 13 quiet submissions overlapped the busy burst. There were no request errors, duplicate arrivals, unrelated deliveries, or receiver errors. The runner exited with failure because quiet-tenant p95 exceeded 30,000 ms. With 13 samples, the nearest-rank p95 is also the maximum. The sample is too small for a statistically robust latency benchmark.
 
 A database inspection during the drain found 55 busy-tenant events and 5 quiet-tenant events still unpublished. The final inspection confirmed all 163 accepted events, including the baseline, had `SUCCEEDED` deliveries and no unpublished outbox rows remained for the test tenants.
 
-The observed backlog includes the outbox publisher, before SQS dispatch limits apply. Publication is sequential, selects globally oldest rows, and waits two seconds between batches of ten. These are the next paths to inspect. This run does not isolate their individual contribution from AWS request latency or worker processing time.
+The backlog included the outbox publisher, before SQS dispatch limits applied. At that point, publication was sequential, selected globally oldest rows, and waited two seconds between batches of ten. That made the publisher a bottleneck to investigate. The run did not isolate its contribution from AWS request latency or worker processing time.
 
-The ingestion limiter rejected most busy submissions, so this run covers 10,000 attempted requests, not 10,000 accepted queue messages. A separate dispatch-pressure run will be needed to validate behavior with a sustained SQS backlog after the publisher issue is addressed.
+The ingestion limiter rejected most busy submissions, so this run covers 10,000 attempted requests, not 10,000 accepted queue messages. This led to the accepted-backlog test below, which queues the busy workload before starting dispatch.
 
 ## Worker acknowledgements
 
-The worker fetches up to ten messages per receive. Webhook calls, circuit updates, and delivery-state writes remain sequential. Once a delivery is persisted as `SUCCEEDED`, its SQS delete can run concurrently with processing the next message. The worker waits for every outstanding delete before receiving another batch. This bounds concurrent acknowledgements to ten without introducing concurrent webhook attempts or circuit-breaker updates within one worker.
+Each receive returns up to ten messages. Webhook calls, circuit updates, and delivery-state writes remain sequential. Once a delivery is persisted as `SUCCEEDED`, its SQS delete can run concurrently with processing the next message. The worker waits for the outstanding deletes before processing the next response batch. This bounds concurrent acknowledgements to ten without introducing concurrent webhook attempts or circuit-breaker updates within one worker.
 
 Delete failures are logged and leave the message eligible for redelivery. If a later receive finds an existing `SUCCEEDED` delivery, the worker retries deletion without repeating the webhook POST. Duplicates are still possible if a process fails after the receiver accepts a webhook but before success is persisted, or if multiple workers race on the same event.
 
-The batch tests cover sequential delivery, overlapping acknowledgements, waiting for all confirmations, delivery and delete failures, and deferred messages. The fairness scenario uses a fast local receiver. Slow receivers and long S3 reads can still exceed the fixed 30-second visibility window; visibility renewal remains a hardening requirement before increasing deployment concurrency.
+The batch tests cover sequential delivery, overlapping acknowledgements, waiting for all confirmations, delivery and delete failures, and deferred messages. The fairness scenario uses a fast local receiver. At this stage there was no visibility renewal, so a slow receiver or S3 read could outlast the 30-second reservation. The later receive-buffer changes added renewal; a failed renewal during an active HTTP request can still lead to duplicate delivery.
 
 ## Intermediate measurements
 
@@ -146,8 +144,7 @@ Quiet-tenant p95 decreased from 226,352 ms to 25,663 ms. Its maximum latency was
 
 The number of accepted busy events differs between runs because the burst duration and token refill timing differ. This is a comparison under identical request-count, concurrency, and rate-limit settings, not identical accepted queue volume. The passing result applies to this run; it is not a general latency guarantee.
 
-A second publisher was also checked during the preceding run and remained on standby while the leader held the advisory lock. Final validation passed all 15 tests, including the opt-in PostgreSQL repository test. Worker, shared library, and fairness-runner TypeScript checks passed. Test processes were stopped after delivery completion; PostgreSQL and Redis were left running.
-
+A second publisher remained on standby while the leader held the advisory lock. The 15 tests available at that point passed, including the PostgreSQL repository test, along with worker, shared, and runner type checks.
 
 ## Accepted-backlog runner
 
@@ -181,10 +178,9 @@ The larger intake budget applies only to the test API process. Normal delivery l
 
 The report includes its mode, publication and queue evidence, and per-probe backlog observations. On completion, the runner waits for queue drain before stopping its worker and receiver. Interrupted or failed runs preserve their accepted events; drain any remaining work before another measurement. Test tenants and delivery records remain available for inspection.
 
-
 ## Accepted-backlog measurement: 2026-10-22
 
-Run ID: `b8b57c2c-837f-47e5-8f03-caf497d2346e`. Report: `logs/fairness-backlog-2026-10-22.json`. The run confirmed 1,000 published busy-tenant outbox entries and an SQS visible-message estimate of 1,000 before starting dispatch. API and receiver ports were 3100 and 4100. The test API used capacity 2,000 and refill 1,000/second; the worker retained its default capacity 10 and refill 10/second. One publisher and one owned worker ran on the new Mac.
+Run ID: `b8b57c2c-837f-47e5-8f03-caf497d2346e`. Report: `logs/fairness-backlog-2026-10-22.json`. The run confirmed 1,000 published busy-tenant outbox entries and an SQS visible-message estimate of 1,000 before starting dispatch. API and receiver ports were 3100 and 4100. The test API used capacity 2,000 and refill 1,000/second; the worker retained its default capacity 10 and refill 10/second. One publisher and one runner-managed worker ran on the Mac.
 
 | Traffic | Submitted | Accepted | HTTP 429 | Delivered | p95 arrival latency |
 |---|---:|---:|---:|---:|---:|
@@ -194,12 +190,11 @@ Run ID: `b8b57c2c-837f-47e5-8f03-caf497d2346e`. Report: `logs/fairness-backlog-2
 
 All 133 quiet probes overlapped outstanding busy deliveries. Quiet maximum latency was 130,123 ms. There were no request errors, duplicate arrivals, unrelated messages, receiver errors, or pending deliveries. The runner exited nonzero because quiet p95 exceeded the predeclared 30,000 ms threshold. Busy latency includes the preload/publication period while the worker was stopped, so it is not a dispatch-only measurement.
 
-The final database check confirmed all 1,136 accepted events, including baseline, had successful delivery records and no unpublished outbox rows remained for the test tenants. The runner drained the queue and stopped its worker; the test API and publisher were then stopped. PostgreSQL and Redis were left running.
+The database check confirmed all 1,136 accepted events, including baseline, had successful delivery records and no unpublished outbox rows remained for the test tenants. The queue drained completely.
 
-This run isolates a remaining dispatch problem: the full busy workload was already published before quiet load began. Publisher tenant rotation cannot schedule messages that are already in SQS. A token bucket caps a tenant's delivery rate but does not by itself guarantee prompt service for another tenant in the shared queue. The worker's receive/defer behavior is the next investigation point.
+This run isolates a remaining dispatch problem: the full busy workload was already published before quiet load began. Publisher tenant rotation cannot schedule messages that are already in SQS. A token bucket caps a tenant's delivery rate but does not by itself guarantee prompt service for another tenant in the shared queue. This shifted the investigation to the worker's receive and defer behavior.
 
-This is a 1,000-accepted-event checkpoint on the Mac, not a 10,000-accepted-event result or a direct performance comparison with the old laptop. The scenario now reproduces the problem without relying on ingestion rejection.
-
+The test reproduced the problem with 1,000 accepted events on the Mac, independently of ingestion rejection. It does not establish a result for 10,000 accepted events or support a direct comparison with the old laptop.
 
 ## SQS tenant grouping
 
@@ -211,19 +206,17 @@ The [detailed behavior reference](https://docs.aws.amazon.com/AWSSimpleQueueServ
 
 The repository test now checks distinct tenants' group IDs, consistency with the message body and attribute, persistence after confirmation, and unchanged pending state on send failure. Older queued messages are not relabeled by this source change, so the comparison uses a drained queue and a fresh preload. Future replay sends must use the same tenant grouping.
 
-
 ## Bounded receive buffer and visibility renewal
 
 Tenant grouping by itself did not meet the local test criterion. Run `f53c341d-c6dd-4d70-a73e-2e4be9c04f36` delivered all 1,000 busy events and 125 quiet load events, but quiet p95 was 108,419 ms. Its report is `logs/fairness-backlog-grouped-2026-10-22.json`.
 
-The worker now runs ten concurrent long polls, each fetching up to ten messages, with at most one hundred fetched messages per cycle. Responses are processed as they arrive; an empty long poll does not block an already-available response. HTTP calls and durable delivery writes remain sequential. The receive buffer gives SQS visibility into reserved work while retaining a bounded amount of local state. This is a consumer-capacity change as well as a producer metadata change, so the next result must be attributed to both.
+The worker now runs ten concurrent long polls, each fetching up to ten messages, with at most one hundred fetched messages per cycle. Responses are processed as they arrive; an empty long poll does not block an already-available response. HTTP calls and durable delivery writes remain sequential. The receive buffer gives SQS visibility into reserved work while retaining a bounded amount of local state. This changed consumer capacity as well as producer metadata, so the subsequent measurements include both changes.
 
 Buffered receipts are renewed every ten seconds using visibility batches of at most ten entries. Each call has an eight-second deadline. Individual failed or missing confirmations invalidate the affected local ownership. An expired or uncertain receipt is skipped before starting a delivery, allowing SQS to redeliver it later. A failure during an already-started HTTP request can still result in duplicate delivery; this remains an at-least-once system.
 
 Before setting a retry/circuit/rate-limit delay or deleting a message, the worker removes its receipt from renewal and waits for any pending renewal to finish. This prevents a late heartbeat from overriding a deliberately chosen visibility delay. Completed delete requests remain bounded to the ten-message response being processed. Neither webhook calls nor circuit-state writes are processed concurrently within a worker.
 
 The renewal tests cover ten-entry batching, exclusion of released receipts, renewal/release races, individual failures, request failures, and expired ownership. The worker uses existing SQS operations; the IAM policy must permit visibility changes through the batch operation as well as the existing delivery operations.
-
 
 ## Explicit dispatch turns
 
@@ -241,8 +234,7 @@ This limit controls how long a busy tenant occupies the local dispatch turn. It 
 
 The receive buffer remains bounded at one hundred messages, while HTTP delivery stays sequential. Busy-tenant completion may take longer because excess work is intentionally delayed to leave room for other tenants. There is no strict bound on latency for arbitrary backlog sizes, destination latency, or tenant counts; the unchanged local test criterion must still be measured.
 
-The dispatch-turn tests cover a quiet tenant behind one hundred busy selections, independent per-tenant budgets, conservation of ready/deferred selections, and reset between cycles. No new queue, library, or database table was introduced.
-
+The dispatch-turn tests cover a quiet tenant behind one hundred busy selections, independent per-tenant budgets, conservation of ready/deferred selections, and reset between cycles. The turn budget is held in worker memory; it does not require another queue or database table.
 
 ## Passing worker-turn measurement: 2026-10-22
 
@@ -262,4 +254,13 @@ This run passes the defined p95 criterion, not an every-request 30-second bound.
 
 Grouping-only and buffer-only changes did not meet the criterion. The passing configuration includes explicit worker turns and batched deferrals as well as queue grouping and the bounded buffer; the result cannot be attributed to SQS grouping alone. Slow receivers, arbitrary tenant counts, and a fully accepted 10,000-event backlog are not validated by this measurement.
 
-All 24 tests passed, including the PostgreSQL repository test, and all package/fairness-runner type checks passed. The runner stopped its owned worker after draining the queue. The test API and publisher were stopped afterward; local PostgreSQL and Redis remain running.
+At the end of Phase 5, all 24 tests passed, including the PostgreSQL repository test, along with package and fairness-runner type checks. The queue drained completely.
+
+
+## What I learned
+
+Separate buckets prevent ingestion from consuming dispatch capacity, but they do not decide which tenant gets served next. Fairness depends on selection in the outbox, scheduling in SQS, and how much work the consumer reserves and processes.
+
+The 10k-request test initially hid part of the dispatch problem because most busy requests received HTTP 429. Preloading accepted events made the shared-queue delay visible. Tenant grouping and a larger buffer helped, but the measured p95 only passed after adding explicit worker turns and batched deferrals.
+
+The tradeoff is visible in the final numbers: quiet p95 fell to 25.2 seconds while busy maximum latency rose to 513.6 seconds. Passing p95 still left a quiet request waiting 63.5 seconds. Tail latency and busy-tenant throughput need separate attention.
