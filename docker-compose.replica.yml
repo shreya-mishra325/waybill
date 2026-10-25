@@ -1,0 +1,25 @@
+services:
+  postgres-replica:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ["sh", "/replica/start-replica.sh"]
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      PGPASSWORD: local-replication-only
+      PGCONNECT_TIMEOUT: "5"
+    ports:
+      - "127.0.0.1:15433:5432"
+    volumes:
+      - replica_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/start-replica.sh:/replica/start-replica.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U webhook -d webhook_platform -Atc 'SELECT pg_is_in_recovery()' | grep -qx t"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+
+volumes:
+  replica_pgdata:

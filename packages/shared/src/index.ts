@@ -16,3 +16,4 @@ export type {
 	TokenBucketSnapshot,
 } from "./rate-limit";
 export { WEBHOOK_SIGNATURE_HEADER, signWebhook, verifyWebhookSignature } from "./webhook-signature";
+export { withReplicaRead, disconnectReadReplica } from "./read-replica";

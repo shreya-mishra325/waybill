@@ -16,6 +16,7 @@ model Tenant {
 
   events      Event[]
   deliveries  Delivery[]
+  replays     Replay[]
 
   @@map("tenants")
 }
@@ -32,6 +33,7 @@ model Event {
   deliveries  Delivery[]
   outbox      Outbox?
   deadLetters DeadLetter[]
+  replay      Replay?
 
   @@index([tenantId])
   @@map("events")
@@ -91,7 +93,25 @@ model DeadLetter {
 
   event        Event    @relation(fields: [eventId], references: [id])
   delivery     Delivery @relation(fields: [deliveryId], references: [id])
+  replay       Replay?
 
   @@index([tenantId])
   @@map("dead_letters")
+}
+
+model Replay {
+  id                 String   @id @default(uuid())
+  tenantId           String   @map("tenant_id")
+  sourceDeadLetterId String   @unique @map("source_dead_letter_id")
+  eventId            String   @unique @map("event_id")
+  idempotencyKey     String   @map("idempotency_key")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  tenant           Tenant     @relation(fields: [tenantId], references: [id])
+  sourceDeadLetter  DeadLetter @relation(fields: [sourceDeadLetterId], references: [id])
+  event            Event      @relation(fields: [eventId], references: [id])
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, createdAt])
+  @@map("replays")
 }

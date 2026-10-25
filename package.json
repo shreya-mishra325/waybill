@@ -17,7 +17,10 @@
     "dev:poller": "bun run --watch packages/worker/src/outbox-poller.ts",
     "ping:receiver": "bun run packages/shared/scripts/ping-receiver.ts",
     "test:fairness": "bun run packages/shared/scripts/test-fairness.ts",
-    "test:fairness:backlog": "bun run packages/shared/scripts/test-fairness.ts --backlog"
+    "test:fairness:backlog": "bun run packages/shared/scripts/test-fairness.ts --backlog",
+    "setup:replica": "bun run packages/shared/scripts/setup-replica.ts",
+    "test:replica": "bun run packages/shared/scripts/test-replica.ts",
+    "test:replay": "bun run packages/shared/scripts/test-replay.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.4"
