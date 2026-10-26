@@ -226,11 +226,12 @@ Local Phase 8 verification is complete. See the notes for controlled test settin
 
 ### Phase 9 - Load Testing & Hardening
 
-- [ ] Choose a load tool such as `k6` or `autocannon` and record request rate, accepted volume, concurrency, tenant mix, payload sizes, receiver behavior, duration, and pass/fail criteria before each run.
-- [ ] Include full-worker instrumentation, background sampling, and monitoring process resource costs in the sustained baseline; the Phase 8 component probes did not measure these together.
-- [ ] Run with the Phase 8 metrics available. Record baseline throughput, HTTP rejections, request-to-delivery p95 and maximum latency, final outcomes, and backlog drain time alongside the service dashboards.
-- [ ] Revisit the Phase 5 fairness cases under sustained accepted queue pressure, including a larger accepted backlog, slow receivers, and more tenant counts. Measure quiet-tenant latency and busy-tenant completion time together.
-- [ ] Identify the first measured bottleneck, change one relevant path, and repeat the workload under comparable settings. Keep the reports and metric time ranges with the result.
+- [x] Add a Bun fixed-arrival load runner that records request rate, accepted volume, concurrency, tenant mix, payload sizes, receiver behavior, duration, and pass/fail criteria before each run. Generator saturation and uncertain request outcomes fail the run.
+- [x] Include full-worker instrumentation, background sampling, and monitoring process resource costs in the sustained baseline; the Phase 8 component probes did not measure these together.
+- [x] Run with the Phase 8 metrics available. Record baseline throughput, HTTP rejections, request-to-delivery p95 and maximum latency, final outcomes, and backlog drain time alongside the service dashboards. The 2026-10-27 local baseline accepted and delivered all 300 events at 5 requests/second across three tenants: overall receiver p95 6.667 seconds, maximum 8.056 seconds, and no HTTP rejections. See [Phase 9 notes](./PHASE_9_NOTES.md) for workload, resource evidence, and limitations.
+- [x] Revisit sustained accepted pressure with one busy and five quiet tenants, including a 100 ms busy-receiver delay. All 1,800 events arrived; maximum accepted busy work awaiting receipt reached 1,015 before hardening. Record quiet latency and busy completion together.
+- [ ] Repeat the controlled worker-start backlog case with more than 1,000 preloaded busy events, retaining quiet latency and busy completion measurements. Sustained arrivals do not replace that preload check.
+- [x] Address the confirmation barrier between receive batches and repeat the unchanged 1,800-event workload. Sharing at most ten pending deletes per receive cycle reduced worst quiet-tenant p95 from 69.864 to 8.468 seconds, with every accepted event durably successful. Reports, queue-operation counts, resource observations, and fixed metric windows are in [Phase 9 notes](./PHASE_9_NOTES.md). Busy-tail and recovery checks remain pending.
 - [ ] Verify that retries, dead-letter handling, replay idempotency, rate limits, and replica reads remain correct under load and recovery.
 - [ ] Consider sharding only if measurements show the `deliveries` table is the bottleneck. If justified, split by `tenantId` hash across two Postgres schemas or databases, route through repositories, and document replica routing and cross-tenant query costs.
 - [ ] Write `docs/PHASE_9_NOTES.md` with the before/after measurements, remaining limits, and any sharding tradeoffs after implementation.

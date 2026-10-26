@@ -80,6 +80,16 @@ bun run test:monitoring:overhead
 
 The flow check sends real development SQS traffic and reuses an existing S3 archive. The overhead probe writes temporary local ingestion records while holding the publisher lock and makes no AWS calls. Both own their temporary application processes and require no competing publisher. Preconditions, cleanup behavior, measured scope, and results are in the Phase 8 notes.
 
+## Sustained backend load
+
+```bash
+bun run test:load --help
+bun run test:load
+bun run test:load:pressure
+```
+
+Requires the local primary and Redis, running service monitoring, an empty development SQS queue and outbox, and no competing publisher or worker. The runner owns its API, publisher, worker, receiver, and test tenants. The default workload sends 300 events over 60 seconds across three tenants, verifies signed deliveries and durable outcomes, and records service/container resources. Failed runs preserve accepted work; reports stay under ignored `logs/`. The pressure profile sends 1,200 busy-tenant and 600 quiet-tenant events, with a delayed busy receiver. Configuration, pass criteria, and results are in [Phase 9 notes](docs/PHASE_9_NOTES.md).
+
 ## Repo layout
 
 ```
