@@ -4,13 +4,6 @@
     "noEmit": true
   },
   "include": [
-    "./test-fairness.ts",
-    "./fairness-report*.ts",
-    "./webhook-receiver.ts",
-    "./test-receiver.ts",
-    "./ping-receiver.ts",
-    "./setup-replica.ts",
-    "./test-replica.ts",
-    "./test-replay.ts"
+    "./*.ts"
   ]
 }

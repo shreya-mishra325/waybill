@@ -23,7 +23,20 @@
     "test:replay": "bun run packages/shared/scripts/test-replay.ts",
     "dev:web": "bun run --cwd packages/web dev",
     "build:web": "bun run --cwd packages/web build",
-    "check:web": "bun run --cwd packages/web typecheck"
+    "check:web": "bun run --cwd packages/web typecheck",
+    "check:shared": "tsc --noEmit -p packages/shared/tsconfig.json",
+    "check:api": "tsc --noEmit -p packages/api/tsconfig.json",
+    "check:worker": "tsc --noEmit -p packages/worker/tsconfig.json",
+    "check:scripts": "tsc --noEmit -p packages/shared/scripts/tsconfig.json",
+    "check:backend": "bun run check:shared && bun run check:api && bun run check:worker && bun run check:scripts",
+    "test:backend": "bun test packages/api packages/worker packages/shared",
+    "prisma:validate": "bunx prisma@5.22.0 validate --schema packages/shared/prisma/schema.prisma",
+    "monitoring:up": "bun run packages/shared/scripts/setup-monitoring.ts",
+    "monitoring:check": "bun run packages/shared/scripts/setup-monitoring.ts --check",
+    "monitoring:down": "docker compose --env-file .env.monitoring -f docker-compose.monitoring.yml down",
+    "test:monitoring": "bun --env-file=.env.monitoring packages/shared/scripts/test-monitoring.ts",
+    "test:monitoring:flow": "bun run packages/shared/scripts/test-monitoring-flow.ts",
+    "test:monitoring:overhead": "bun run packages/shared/scripts/benchmark-monitoring.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

@@ -1,0 +1,86 @@
+name: Backend checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgresql://webhook:webhook@127.0.0.1:15432/webhook_platform
+  AWS_REGION: ap-southeast-2
+  RUN_BACKLOG_DB_TESTS: "0"
+  RUN_DB_TESTS: "0"
+  RUN_REPLICA_TESTS: "0"
+  RUN_REPLAY_TESTS: "0"
+  RUN_ARCHIVE_TESTS: "0"
+  AWS_EC2_METADATA_DISABLED: "true"
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - run: bun run prisma:generate
+      - run: bun run prisma:validate
+      - run: bun run check:backend
+      - run: bun run test:backend
+
+  database:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      COMPOSE_PROJECT_NAME: waybill-ci
+      READ_REPLICA_DATABASE_URL: postgresql://waybill_reader:local-reader-only@127.0.0.1:15433/webhook_platform
+      SQS_QUEUE_URL: https://sqs.ap-southeast-2.amazonaws.com/000000000000/ci-mocked
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - run: bun run prisma:generate
+      - name: Prepare Compose configuration
+        run: cp .env.example .env
+      - name: Start isolated primary
+        run: docker compose up -d --wait postgres
+      - name: Apply and validate migration history
+        run: |
+          bunx prisma@5.22.0 migrate deploy --schema packages/shared/prisma/schema.prisma
+          bunx prisma@5.22.0 migrate status --schema packages/shared/prisma/schema.prisma
+      - name: Start physical replica
+        run: bun run setup:replica
+      - name: Outbox publication with mocked SQS
+        run: bun test packages/worker/src/repositories/outbox.test.ts
+        env:
+          RUN_DB_TESTS: "1"
+      - name: Outbox backlog sampling and lock deadline
+        run: bun test packages/worker/src/repositories/outbox-backlog.test.ts
+        env:
+          RUN_BACKLOG_DB_TESTS: "1"
+      - name: Replica HTTP reads and lag
+        run: bun test packages/api/src/routes/delivery-history.test.ts
+        env:
+          RUN_REPLICA_TESTS: "1"
+      - name: Concurrent replay persistence
+        run: bun test packages/api/src/repositories/replays.test.ts
+        env:
+          RUN_REPLAY_TESTS: "1"
+      - name: Database diagnostics
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.replica.yml logs --no-color --tail=100 postgres postgres-replica
+      - name: Remove runner databases
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.replica.yml down --volumes --remove-orphans
