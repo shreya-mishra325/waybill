@@ -36,7 +36,9 @@
     "monitoring:down": "docker compose --env-file .env.monitoring -f docker-compose.monitoring.yml down",
     "test:monitoring": "bun --env-file=.env.monitoring packages/shared/scripts/test-monitoring.ts",
     "test:monitoring:flow": "bun run packages/shared/scripts/test-monitoring-flow.ts",
-    "test:monitoring:overhead": "bun run packages/shared/scripts/benchmark-monitoring.ts"
+    "test:monitoring:overhead": "bun run packages/shared/scripts/benchmark-monitoring.ts",
+    "test:load": "bun run packages/shared/scripts/test-load.ts",
+    "test:load:pressure": "bun run packages/shared/scripts/test-load.ts --pressure"
   },
   "devDependencies": {
     "typescript": "^5.5.4"
