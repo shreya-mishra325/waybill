@@ -2,11 +2,20 @@ import { SendMessageCommand } from "@aws-sdk/client-sqs";
 import {
   createSingleConnectionPrisma,
   createSqsClient,
+  createPublisherMetrics,
+  createBacklogMetrics,
+  metricsServerOptions,
+  startMetricsServer,
+  observeSqsOperation,
+  type PublisherMetrics,
   type Prisma,
   type PrismaClient,
   type QueueMessage,
 } from "@waybill/shared";
 import { listUnpublished, markPublished } from "./repositories/outbox";
+import { createOutboxBacklogReader } from "./repositories/outbox-backlog";
+import { readQueueBacklog } from "./repositories/queue-backlog";
+import { startBacklogSampler } from "./metrics/backlog-sampler";
 
 const POLL_MS = 2000;
 const STANDBY_MS = 2000;
@@ -61,6 +70,7 @@ export async function publishOne(
   db: Prisma.TransactionClient,
   row: Awaited<ReturnType<typeof listUnpublished>>[number],
   sqs = createSqsClient(),
+  metrics?: PublisherMetrics,
 ): Promise<void> {
   const queueUrl = requireEnv("SQS_QUEUE_URL");
 
@@ -72,27 +82,39 @@ export async function publishOne(
     payloadS3Key: row.event.payloadS3Key,
   };
 
-  await sendWithTimeout(
-    (abortSignal) =>
-      sqs.send(
-        new SendMessageCommand({
-          QueueUrl: queueUrl,
-          MessageGroupId: row.event.tenantId,
-          MessageBody: JSON.stringify(message),
-          MessageAttributes: {
-            tenantId: {
-              DataType: "String",
-              StringValue: row.event.tenantId,
+  try {
+    await observeSqsOperation(metrics, "send", () => sendWithTimeout(
+      (abortSignal) =>
+        sqs.send(
+          new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageGroupId: row.event.tenantId,
+            MessageBody: JSON.stringify(message),
+            MessageAttributes: {
+              tenantId: {
+                DataType: "String",
+                StringValue: row.event.tenantId,
+              },
             },
-          },
-        }),
-        { abortSignal },
-      ),
-    "SQS SendMessage",
-  );
+          }),
+          { abortSignal },
+        ),
+      "SQS SendMessage",
+    ));
+  } catch (error) {
+    metrics?.recordPublication("send_failed");
+    throw error;
+  }
 
-  const updated = await markPublished(db, row.id);
+  let updated: { count: number };
+  try {
+    updated = await markPublished(db, row.id);
+  } catch (error) {
+    metrics?.recordPublication("persist_failed");
+    throw error;
+  }
   if (updated.count === 0) {
+    metrics?.recordPublication("already_published");
     console.warn("outbox already published, possible duplicate SQS message", {
       outboxId: row.id,
       eventId: row.eventId,
@@ -100,6 +122,7 @@ export async function publishOne(
     return;
   }
 
+  metrics?.recordPublication("published");
   console.log("outbox published", {
     outboxId: row.id,
     eventId: row.eventId,
@@ -107,9 +130,9 @@ export async function publishOne(
   });
 }
 
-export async function tick(db: PrismaClient, afterTenantId = "") {
+export async function tick(db: PrismaClient, afterTenantId = "", metrics?: PublisherMetrics) {
   const rows = await listUnpublished(db, BATCH_SIZE, afterTenantId);
-  const results = await Promise.allSettled(rows.map((row) => publishOne(db, row)));
+  const results = await Promise.allSettled(rows.map((row) => publishOne(db, row, undefined, metrics)));
   let failed = false;
   results.forEach((result, index) => {
     if (result.status === "rejected") {
@@ -133,6 +156,23 @@ async function main(): Promise<void> {
   requireEnv("SQS_QUEUE_URL");
   requireEnv("AWS_REGION");
 
+  const metricsOptions = metricsServerOptions(process.env, 9101, "PUBLISHER_METRICS_PORT");
+  const metrics = metricsOptions ? createPublisherMetrics() : undefined;
+  let metricsServer: ReturnType<typeof startMetricsServer> | undefined;
+  if (metrics && metricsOptions) {
+    try {
+      metricsServer = startMetricsServer(metrics.registry, metricsOptions);
+    } catch (error) {
+      console.error("Publisher metrics listener failed to start; publisher will continue", error);
+    }
+  }
+  const backlogReader = metrics ? createOutboxBacklogReader(process.env.DATABASE_URL) : undefined;
+  const backlogSampler = metrics && backlogReader ? startBacklogSampler({
+    metrics: createBacklogMetrics(metrics.registry),
+    readOutbox: signal => backlogReader.count(signal),
+    readQueue: signal => readQueueBacklog(createSqsClient(), requireEnv("SQS_QUEUE_URL"), signal),
+    onError: (source, error) => console.error("Backlog sample failed", { source, error }),
+  }) : undefined;
   const db = createSingleConnectionPrisma();
   let isLeader = false;
   let stopping = false;
@@ -156,7 +196,7 @@ async function main(): Promise<void> {
           console.log("became leader");
         }
 
-        const result = await tick(db, afterTenantId);
+        const result = await tick(db, afterTenantId, metrics);
         afterTenantId = result.afterTenantId;
         if (result.failed) throw new Error("One or more outbox publications failed");
         if (result.count === 0 && !stopping) await sleep(POLL_MS);
@@ -169,9 +209,21 @@ async function main(): Promise<void> {
     }
   } finally {
     try {
-      if (isLeader) await releaseLeader(db);
+      await backlogSampler?.stop();
     } finally {
-      await db.$disconnect();
+      try {
+        await backlogReader?.disconnect();
+      } finally {
+        try {
+          if (isLeader) await releaseLeader(db);
+        } finally {
+          try {
+            await db.$disconnect();
+          } finally {
+            await metricsServer?.stop(true);
+          }
+        }
+      }
     }
   }
 }

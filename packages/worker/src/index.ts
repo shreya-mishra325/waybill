@@ -9,6 +9,11 @@ import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import {
   createS3Client,
   createSqsClient,
+  createWorkerMetrics,
+  metricsServerOptions,
+  startMetricsServer,
+  observeSqsOperation,
+  type WorkerMetrics,
   type QueueMessage,
 } from "@waybill/shared";
 import {
@@ -26,6 +31,7 @@ import {
 } from "./delivery/circuit-breaker";
 import { TenantTurns } from "./delivery/tenant-turns";
 import { VisibilityLeases } from "./delivery/visibility";
+import { confirmedBatchReceipts } from "./delivery/queue-confirmations";
 import { postWebhook } from "./delivery/http";
 import { processDeliveryBatch, type Acknowledge } from "./delivery/message-batch";
 import { consumeTenantToken } from "./delivery/rate-limiter";
@@ -141,10 +147,12 @@ async function hideUntil(
   queueUrl: string,
   receipt: string,
   delayMs: number,
+  metrics?: WorkerMetrics,
+  reason?: "circuit_open" | "rate_limit" | "not_due",
 ): Promise<void> {
   await visibility?.release(receipt);
   const sqs = createSqsClient();
-  await sendWithTimeout(
+  await observeSqsOperation(metrics, "change_visibility", () => sendWithTimeout(
     (abortSignal) =>
       sqs.send(
         new ChangeMessageVisibilityCommand({
@@ -155,22 +163,25 @@ async function hideUntil(
         { abortSignal },
       ),
     "SQS ChangeMessageVisibility",
-  );
+  ));
+  if (reason) metrics?.recordDeferral(reason);
 }
 
-async function deferExcessMessages(queueUrl: string, messages: Message[]): Promise<void> {
+export async function deferExcessMessages(queueUrl: string, messages: Message[], metrics?: WorkerMetrics): Promise<void> {
   const receipts = messages.flatMap((message) => message.ReceiptHandle ? [message.ReceiptHandle] : []);
   await Promise.all(receipts.map((receipt) => visibility?.release(receipt)));
   const batches: string[][] = [];
   for (let i = 0; i < receipts.length; i += 10) batches.push(receipts.slice(i, i + 10));
   const results = await Promise.allSettled(batches.map(async (batch) => {
-    const result = await createSqsClient().send(new ChangeMessageVisibilityBatchCommand({
+    const result = await observeSqsOperation(metrics, "change_visibility", () => createSqsClient().send(new ChangeMessageVisibilityBatchCommand({
       QueueUrl: queueUrl,
       Entries: batch.map((receipt, index) => ({
         Id: String(index), ReceiptHandle: receipt, VisibilityTimeout: 30,
       })),
-    }), { abortSignal: AbortSignal.timeout(8000) });
-    if (result.Failed?.length || result.Successful?.length !== batch.length) {
+    }), { abortSignal: AbortSignal.timeout(8000) }), result => !result.Failed?.length && confirmedBatchReceipts(batch, result).size === batch.length);
+    const confirmed = confirmedBatchReceipts(batch, result);
+    if (confirmed.size) metrics?.recordDeferral("tenant_turn", confirmed.size);
+    if (result.Failed?.length || confirmed.size !== batch.length) {
       throw new Error(`Incomplete tenant-turn deferral: ${JSON.stringify(result.Failed ?? [])}`);
     }
   }));
@@ -179,14 +190,14 @@ async function deferExcessMessages(queueUrl: string, messages: Message[]): Promi
   }
 }
 
-async function acknowledgeMessage(queueUrl: string, receipt: string): Promise<void> {
+async function acknowledgeMessage(queueUrl: string, receipt: string, metrics?: WorkerMetrics): Promise<void> {
   await visibility?.release(receipt);
-  await sendWithTimeout(
+  await observeSqsOperation(metrics, "delete", () => sendWithTimeout(
     (abortSignal) => createSqsClient().send(new DeleteMessageCommand({
       QueueUrl: queueUrl, ReceiptHandle: receipt,
     }), { abortSignal }),
     "SQS DeleteMessage",
-  );
+  ));
 }
 
 async function archivePayload(message: QueueMessage): Promise<string> {
@@ -219,6 +230,7 @@ async function moveToDeadLetter(
   message: QueueMessage,
   queueUrl: string,
   receipt: string,
+  metrics?: WorkerMetrics,
 ): Promise<void> {
   const payloadS3Key = await archivePayload(message);
   await createDeadLetter({
@@ -231,8 +243,9 @@ async function moveToDeadLetter(
     payloadS3Key,
   });
   await markDeadLettered(delivery.id, error);
+  metrics?.recordTerminal("dead_lettered");
 
-  await acknowledgeMessage(queueUrl, receipt);
+  await acknowledgeMessage(queueUrl, receipt, metrics);
   console.log("delivery dead-lettered", {
     eventId: delivery.eventId,
     deliveryId: delivery.id,
@@ -247,19 +260,23 @@ async function scheduleRetry(
   error: string,
   queueUrl: string,
   receipt: string,
+  reason: "preparation" | "webhook",
+  metrics?: WorkerMetrics,
 ): Promise<Date> {
   const when = nextAttemptAt(attemptCount);
   const delayMs = Math.max(when.getTime() - Date.now(), 1000);
   await markFailed(deliveryId, error, when);
-  await hideUntil(queueUrl, receipt, delayMs);
+  metrics?.recordRetry(reason);
+  await hideUntil(queueUrl, receipt, delayMs, metrics);
   return when;
 }
 
-async function handleMessage(
+export async function handleMessage(
   queueUrl: string,
   targetUrl: string,
   sqsMessage: Message,
   redis = createRedisClient(),
+  metrics?: WorkerMetrics,
 ): Promise<Acknowledge | void> {
   const receipt = sqsMessage.ReceiptHandle;
   if (!receipt) {
@@ -270,7 +287,7 @@ async function handleMessage(
   const decision = getCircuitDecision(breaker, Date.now());
   if (!decision.allowed) {
     const delayMs = Math.max(decision.delayMs, 1000);
-    await hideUntil(queueUrl, receipt, delayMs);
+    await hideUntil(queueUrl, receipt, delayMs, metrics, "circuit_open");
     console.log("destination circuit open, message hidden until cooldown expires", {
       messageId: sqsMessage.MessageId,
       targetUrl,
@@ -285,7 +302,7 @@ async function handleMessage(
     console.error("poison SQS message, deleting", {
       messageId: sqsMessage.MessageId,
     });
-    await acknowledgeMessage(queueUrl, receipt);
+    await acknowledgeMessage(queueUrl, receipt, metrics);
     return;
   }
 
@@ -297,7 +314,7 @@ async function handleMessage(
   );
   if (!rateLimit.allowed) {
     const delayMs = Math.max(rateLimit.retryAfterMs, 1000);
-    await hideUntil(queueUrl, receipt, delayMs);
+    await hideUntil(queueUrl, receipt, delayMs, metrics, "rate_limit");
     console.log("tenant rate limit exceeded, message hidden", {
       eventId: parsed.eventId,
       tenantId: parsed.tenantId,
@@ -308,7 +325,7 @@ async function handleMessage(
 
   const existing = await findByEventAndUrl(parsed.eventId, targetUrl);
   if (existing?.status === "DEAD_LETTERED" || existing?.status === "SUCCEEDED") {
-    await acknowledgeMessage(queueUrl, receipt);
+    await acknowledgeMessage(queueUrl, receipt, metrics);
     console.log("delivery already complete, deleted SQS message", {
       eventId: parsed.eventId,
       status: existing.status,
@@ -317,7 +334,7 @@ async function handleMessage(
   }
   if (existing?.nextAttemptAt && existing.nextAttemptAt.getTime() > Date.now()) {
     const delayMs = existing.nextAttemptAt.getTime() - Date.now();
-    await hideUntil(queueUrl, receipt, delayMs);
+    await hideUntil(queueUrl, receipt, delayMs, metrics, "not_due");
     console.log("delivery not due yet, hid SQS message", {
       eventId: parsed.eventId,
       nextAttemptAt: existing.nextAttemptAt.toISOString(),
@@ -352,6 +369,7 @@ async function handleMessage(
         parsed,
         queueUrl,
         receipt,
+        metrics,
       );
       return;
     }
@@ -361,6 +379,8 @@ async function handleMessage(
       error,
       queueUrl,
       receipt,
+      "preparation",
+      metrics,
     );
     console.error("webhook preparation failed, scheduled retry", {
       eventId: parsed.eventId,
@@ -370,12 +390,14 @@ async function handleMessage(
     return;
   }
 
+  const started = metrics ? performance.now() : 0;
   const result = await postWebhook(targetUrl, {
     eventId: parsed.eventId,
     tenantId: parsed.tenantId,
     type: parsed.type,
     payload,
   }, signingSecret);
+  metrics?.recordWebhook(result.ok ? "success" : "failure", (performance.now() - started) / 1000);
 
   if (!result.ok) {
     const afterFailure = await recordDeliveryFailure(redis, targetUrl);
@@ -393,6 +415,7 @@ async function handleMessage(
         parsed,
         queueUrl,
         receipt,
+        metrics,
       );
       return;
     }
@@ -402,6 +425,8 @@ async function handleMessage(
       result.error,
       queueUrl,
       receipt,
+      "webhook",
+      metrics,
     );
     console.error("delivery failed, scheduled retry", {
       eventId: parsed.eventId,
@@ -415,8 +440,9 @@ async function handleMessage(
 
   const afterSuccess = await recordDeliverySuccess(redis, targetUrl);
   await markSucceeded(delivery.id);
+  metrics?.recordTerminal("succeeded");
   return async () => {
-    await acknowledgeMessage(queueUrl, receipt);
+    await acknowledgeMessage(queueUrl, receipt, metrics);
     console.log("delivery succeeded", {
       eventId: parsed.eventId,
       deliveryId: delivery.id,
@@ -428,22 +454,29 @@ async function handleMessage(
 async function main(): Promise<void> {
   const queueUrl = requireEnv("SQS_QUEUE_URL");
   const targetUrl = requireEnv("RECEIVER_URL");
+  const metricsOptions = metricsServerOptions(process.env, 9102, "WORKER_METRICS_PORT");
+  const metrics = metricsOptions ? createWorkerMetrics(() => visibility?.ownedSize ?? 0) : undefined;
+  let metricsServer: ReturnType<typeof startMetricsServer> | undefined;
+  if (metrics && metricsOptions) {
+    try {
+      metricsServer = startMetricsServer(metrics.registry, metricsOptions);
+    } catch (error) {
+      console.error("Worker metrics listener failed to start; worker will continue", error);
+    }
+  }
   const sqs = createSqsClient();
   const redis = createRedisClient();
   await redis.connect();
 
   visibility = new VisibilityLeases(async (receipts) => {
-    const result = await sqs.send(new ChangeMessageVisibilityBatchCommand({
+    const result = await observeSqsOperation(metrics, "change_visibility", () => sqs.send(new ChangeMessageVisibilityBatchCommand({
       QueueUrl: queueUrl,
       Entries: receipts.map((receipt, index) => ({
         Id: String(index), ReceiptHandle: receipt, VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
       })),
-    }), { abortSignal: AbortSignal.timeout(8000) });
+    }), { abortSignal: AbortSignal.timeout(8000) }), result => !result.Failed?.length && confirmedBatchReceipts(receipts, result).size === receipts.length);
     if (result.Failed?.length) console.error("visibility renewal entries failed", result.Failed);
-    return new Set((result.Successful ?? []).flatMap((entry) => {
-      const receipt = receipts[Number(entry.Id)];
-      return receipt ? [receipt] : [];
-    }));
+    return confirmedBatchReceipts(receipts, result);
   }, (err) => console.error("visibility renewal failed", err));
   const leases = visibility;
   console.log("delivery worker started", { maxBufferedMessages: RECEIVE_BATCHES * 10 });
@@ -456,7 +489,7 @@ async function main(): Promise<void> {
       const turns = new TenantTurns();
       const deferred: Message[] = [];
       for (let id = 0; id < RECEIVE_BATCHES; id++) {
-        const pending = sendWithTimeout(
+        const pending = observeSqsOperation(metrics, "receive", () => sendWithTimeout(
           (abortSignal) => sqs.send(new ReceiveMessageCommand({
             QueueUrl: queueUrl,
             MaxNumberOfMessages: 10,
@@ -466,7 +499,7 @@ async function main(): Promise<void> {
             MessageSystemAttributeNames: ["MessageGroupId"],
           }), { abortSignal }),
           "SQS ReceiveMessage",
-        ).then((response) => {
+        )).then((response) => {
           const messages = response.Messages ?? [];
           for (const message of messages) {
             if (message.ReceiptHandle) leases.track(message.ReceiptHandle);
@@ -501,7 +534,7 @@ async function main(): Promise<void> {
             return;
           }
           try {
-            const acknowledge = await handleMessage(queueUrl, targetUrl, message, redis);
+            const acknowledge = await handleMessage(queueUrl, targetUrl, message, redis, metrics);
             if (!acknowledge && receipt) await leases.release(receipt);
             return acknowledge;
           } catch (err) {
@@ -510,18 +543,24 @@ async function main(): Promise<void> {
           }
         }, (message, err) => console.error("handle message failed", { messageId: message.MessageId, err }));
       }
-      await deferExcessMessages(queueUrl, deferred);
+      await deferExcessMessages(queueUrl, deferred, metrics);
       if (receiveFailed) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
   } finally {
-    await leases.stop();
-    await redis.quit();
+    try {
+      await leases.stop();
+      await redis.quit();
+    } finally {
+      await metricsServer?.stop(true);
+    }
   }
 }
 
-main().catch((err: unknown) => {
-  console.error("delivery worker crashed", err);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((err: unknown) => {
+    console.error("delivery worker crashed", err);
+    process.exit(1);
+  });
+}

@@ -20,6 +20,15 @@ export class VisibilityLeases {
     return this.receipts.size;
   }
 
+  get ownedSize(): number {
+    const now = this.now();
+    let count = 0;
+    for (const entry of this.receipts.values()) {
+      if (entry.expiresAt > now) count++;
+    }
+    return count;
+  }
+
   isCurrent(receipt: string): boolean {
     return (this.receipts.get(receipt)?.expiresAt ?? 0) > this.now() + 5000;
   }

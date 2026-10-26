@@ -53,6 +53,8 @@ describe("buffered message visibility", () => {
       expect(leases.isCurrent("missing")).toBe(false);
       expect(failed.isCurrent("request-error")).toBe(false);
       expect(errors.length).toBe(2);
+      expect(leases.ownedSize).toBe(1);
+      expect(failed.ownedSize).toBe(0);
     } finally { await Promise.all([leases.stop(), failed.stop()]); }
   });
 
@@ -63,9 +65,11 @@ describe("buffered message visibility", () => {
       (err) => { throw err; }, () => now);
     try {
       leases.track("receipt");
+      expect(leases.ownedSize).toBe(1);
       now = 26_000;
       expect(leases.isCurrent("receipt")).toBe(false);
       now = 31_000;
+      expect(leases.ownedSize).toBe(0);
       await leases.renewNow();
       expect(requests).toBe(0);
       expect(leases.isCurrent("receipt")).toBe(false);
