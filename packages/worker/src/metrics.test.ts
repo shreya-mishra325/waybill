@@ -10,7 +10,13 @@ const scenarios = [
 
 for (const scenario of scenarios) {
   test(`delivery metrics: ${scenario}`, async () => {
-    const child = Bun.spawn([process.execPath, resolve(import.meta.dir, "metrics-scenarios.fixture.ts"), scenario], {
+    const child = Bun.spawn([process.execPath, "--no-env-file", resolve(import.meta.dir, "metrics-scenarios.fixture.ts"), scenario], {
+      env: {
+        DATABASE_URL: "postgresql://metrics_test:metrics_test@127.0.0.1:1/metrics_test",
+        AWS_REGION: "ap-southeast-2",
+        S3_BUCKET_NAME: "waybill-metrics-test",
+        AWS_EC2_METADATA_DISABLED: "true",
+      },
       stdin: "ignore", stdout: "pipe", stderr: "pipe",
     });
     const timer = setTimeout(() => child.kill("SIGKILL"), 8000);

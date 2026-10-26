@@ -12,6 +12,7 @@ let deleteFailure = false;
 let visibilityFailure = false;
 let preparationFailure = false;
 let archiveFailure = false;
+let archiveWrites = 0;
 let persistFailure = false;
 let publisherUpdates = 0;
 let alreadyPublished = false;
@@ -33,7 +34,9 @@ mock.module("@waybill/shared", () => ({
     }
     return { MessageId: "test-confirmed" };
   } }),
-  createS3Client: () => ({ send: async () => {
+  createS3Client: () => ({ send: async (command: { input: { Bucket?: string } }) => {
+    archiveWrites++;
+    expect(command.input.Bucket).toBe("waybill-metrics-test");
     if (archiveFailure) throw new Error("archive unavailable");
     return {};
   } }),
@@ -155,8 +158,9 @@ try {
     preparationFailure = scenario === "exhausted-preparation";
     archiveFailure = scenario === "archive-failure";
     persistFailure = scenario === "terminal-persist-failure";
-    if (archiveFailure || persistFailure) await expect(handle()).rejects.toBeDefined();
+    if (archiveFailure || persistFailure) await expect(handle()).rejects.toThrow(archiveFailure ? "archive unavailable" : "database unavailable");
     else await handle();
+    expect(archiveWrites).toBe(persistFailure ? 0 : 1);
     expect(await value("waybill_webhook_attempts_total")).toBe(preparationFailure ? 0 : 1);
     expect(await value("waybill_delivery_terminal_outcomes_total")).toBe(archiveFailure || persistFailure ? 0 : 1);
     expect(await value("waybill_delivery_retries_total")).toBe(0);
