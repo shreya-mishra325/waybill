@@ -33,7 +33,7 @@ import { TenantTurns } from "./delivery/tenant-turns";
 import { VisibilityLeases } from "./delivery/visibility";
 import { confirmedBatchReceipts } from "./delivery/queue-confirmations";
 import { postWebhook } from "./delivery/http";
-import { processDeliveryBatch, type Acknowledge } from "./delivery/message-batch";
+import { DeliveryConfirmations, processDeliveryBatch, type Acknowledge } from "./delivery/message-batch";
 import { consumeTenantToken } from "./delivery/rate-limiter";
 import { findTenantSigningSecret } from "./repositories/tenants";
 import { createDeadLetter } from "./repositories/dead-letters";
@@ -513,35 +513,40 @@ async function main(): Promise<void> {
         }).catch((error: unknown) => ({ id, messages: [], error }));
         pendingReceives.set(id, pending);
       }
-      while (pendingReceives.size) {
-        const result = await Promise.race(pendingReceives.values());
-        pendingReceives.delete(result.id);
-        if (result.error !== undefined) {
-          receiveFailed = true;
-          console.error("receive failed", result.error);
+      const confirmations = new DeliveryConfirmations();
+      try {
+        while (pendingReceives.size) {
+          const result = await Promise.race(pendingReceives.values());
+          pendingReceives.delete(result.id);
+          if (result.error !== undefined) {
+            receiveFailed = true;
+            console.error("receive failed", result.error);
+          }
+          const messages = result.messages;
+          await processDeliveryBatch(messages, async (message) => {
+            const receipt = message.ReceiptHandle;
+            if (receipt && !leases.isCurrent(receipt)) {
+              await leases.release(receipt);
+              console.warn("skipping message after visibility ownership became uncertain", { messageId: message.MessageId });
+              return;
+            }
+            const parsed = parseQueueMessage(message.Body ?? "");
+            if (parsed && !turns.take(parsed.tenantId)) {
+              deferred.push(message);
+              return;
+            }
+            try {
+              const acknowledge = await handleMessage(queueUrl, targetUrl, message, redis, metrics);
+              if (!acknowledge && receipt) await leases.release(receipt);
+              return acknowledge;
+            } catch (err) {
+              if (receipt) await leases.release(receipt);
+              throw err;
+            }
+          }, (message, err) => console.error("handle message failed", { messageId: message.MessageId, err }), confirmations);
         }
-        const messages = result.messages;
-        await processDeliveryBatch(messages, async (message) => {
-          const receipt = message.ReceiptHandle;
-          if (receipt && !leases.isCurrent(receipt)) {
-            await leases.release(receipt);
-            console.warn("skipping message after visibility ownership became uncertain", { messageId: message.MessageId });
-            return;
-          }
-          const parsed = parseQueueMessage(message.Body ?? "");
-          if (parsed && !turns.take(parsed.tenantId)) {
-            deferred.push(message);
-            return;
-          }
-          try {
-            const acknowledge = await handleMessage(queueUrl, targetUrl, message, redis, metrics);
-            if (!acknowledge && receipt) await leases.release(receipt);
-            return acknowledge;
-          } catch (err) {
-            if (receipt) await leases.release(receipt);
-            throw err;
-          }
-        }, (message, err) => console.error("handle message failed", { messageId: message.MessageId, err }));
+      } finally {
+        await confirmations.drain();
       }
       await deferExcessMessages(queueUrl, deferred, metrics);
       if (receiveFailed) {

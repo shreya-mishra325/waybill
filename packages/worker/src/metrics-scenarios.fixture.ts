@@ -20,16 +20,18 @@ let attemptCount = 1;
 let limited = false;
 let circuitOpen = false;
 let partialBatch = false;
+const visibilityBatches: number[][] = [];
 
 mock.module("@waybill/shared", () => ({
   ...shared,
-  createSqsClient: () => ({ send: async (command: { constructor: { name: string }; input: { Entries?: { Id: string }[] } }) => {
+  createSqsClient: () => ({ send: async (command: { constructor: { name: string }; input: { Entries?: { Id: string; VisibilityTimeout?: number }[] } }) => {
     const name = command.constructor.name;
     if (name === "SendMessageCommand" && sendFailure) throw new Error("queue unavailable");
     if (name === "DeleteMessageCommand" && deleteFailure) throw new Error("delete unavailable");
     if (name.startsWith("ChangeMessageVisibility") && visibilityFailure) throw new Error("visibility unavailable");
     if (command.input.Entries) {
       const entries = command.input.Entries;
+      if (name === "ChangeMessageVisibilityBatchCommand") visibilityBatches.push(entries.map(entry => entry.VisibilityTimeout ?? -1));
       return partialBatch ? { Successful: [entries[0]], Failed: [entries[1]] } : { Successful: entries };
     }
     return { MessageId: "test-confirmed" };
@@ -181,6 +183,15 @@ try {
     await deferExcessMessages(queue, [{ ReceiptHandle: "one" }, { ReceiptHandle: "two" }], metrics);
     expect(await value("waybill_delivery_deferrals_total", { reason: "tenant_turn" })).toBe(1);
     expect(await value("waybill_sqs_operations_total", { operation: "change_visibility", outcome: "failure" })).toBe(1);
+    expect(visibilityBatches).toEqual([[30, 30]]);
+    await noAttempt();
+  } else if (scenario === "batch-complete") {
+    await deferExcessMessages(queue, Array.from({ length: 23 }, (_, index) => ({ ReceiptHandle: `receipt-${index}` })), metrics);
+    expect(visibilityBatches.map(batch => batch.length)).toEqual([10, 10, 3]);
+    expect(visibilityBatches.flat().every(seconds => seconds === 30)).toBe(true);
+    expect(await value("waybill_delivery_deferrals_total", { reason: "tenant_turn" })).toBe(23);
+    expect(await value("waybill_sqs_operations_total", { operation: "change_visibility", outcome: "success" })).toBe(3);
+    expect(await value("waybill_delivery_terminal_outcomes_total")).toBe(0);
     await noAttempt();
   } else if (scenario === "poison") {
     await handleMessage(queue, target, { ...message, Body: "invalid" }, undefined, metrics);

@@ -5,7 +5,7 @@ const scenarios = [
   "publisher-success", "publisher-send-failure", "publisher-persist-failure", "publisher-duplicate",
   "success", "delete-failure", "retry", "retry-visibility-failure", "preparation", "retry-persist-failure",
   "exhausted", "exhausted-preparation", "archive-failure", "terminal-persist-failure",
-  "circuit", "rate-limit", "not-due", "deferral-failure", "batch-partial", "poison",
+  "circuit", "rate-limit", "not-due", "deferral-failure", "batch-partial", "batch-complete", "poison",
 ];
 
 for (const scenario of scenarios) {
