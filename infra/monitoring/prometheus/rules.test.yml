@@ -1,0 +1,350 @@
+rule_files:
+  - rules.yml
+evaluation_interval: 15s
+tests:
+  - name: "fresh counts"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "7+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"one\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 1m
+        exp_samples:
+          - labels: "waybill:outbox_pending:fresh{}"
+            value: 7
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 1m
+        exp_samples:
+          - labels: "waybill:sqs_messages:fresh{state=\"visible\"}"
+            value: 4
+          - labels: "waybill:sqs_messages:fresh{state=\"in_flight\"}"
+            value: 2
+          - labels: "waybill:sqs_messages:fresh{state=\"delayed\"}"
+            value: 1
+  - name: "failed samples do not expose old counts"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "7+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"one\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "0+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "0+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 1m
+        exp_samples: []
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 1m
+        exp_samples: []
+  - name: "down publisher does not expose old counts"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "7+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"one\"}"
+        values: "0+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 1m
+        exp_samples: []
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 1m
+        exp_samples: []
+  - name: "never sampled is unknown"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "7+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"one\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "0+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "0+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 1m
+        exp_samples: []
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 1m
+        exp_samples: []
+  - name: "stale at exactly 90 seconds"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "7+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"one\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 2m
+        exp_samples: []
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 2m
+        exp_samples: []
+  - name: "future timestamps are invalid"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "7+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"one\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "120+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "120+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 1m
+        exp_samples: []
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 1m
+        exp_samples: []
+  - name: "fresh empty outbox is zero"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "0+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"one\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 1m
+        exp_samples:
+          - labels: "waybill:outbox_pending:fresh{}"
+            value: 0
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 1m
+        exp_samples:
+          - labels: "waybill:sqs_messages:fresh{state=\"visible\"}"
+            value: 4
+          - labels: "waybill:sqs_messages:fresh{state=\"in_flight\"}"
+            value: 2
+          - labels: "waybill:sqs_messages:fresh{state=\"delayed\"}"
+            value: 1
+  - name: "multiple publishers do not sum global backlog"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "7+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"one\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"two\",service=\"publisher\"}"
+        values: "4+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"two\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"two\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"two\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"two\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"two\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"two\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"two\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"two\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 1m
+        exp_samples:
+          - labels: "waybill:outbox_pending:fresh{}"
+            value: 7
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 1m
+        exp_samples:
+          - labels: "waybill:sqs_messages:fresh{state=\"visible\"}"
+            value: 4
+          - labels: "waybill:sqs_messages:fresh{state=\"in_flight\"}"
+            value: 2
+          - labels: "waybill:sqs_messages:fresh{state=\"delayed\"}"
+            value: 1
+  - name: "stale larger publisher does not hide fresh data"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "7+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"one\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"two\",service=\"publisher\"}"
+        values: "99+0x12"
+      - series: "up{job=\"waybill-publisher\",instance=\"two\"}"
+        values: "0+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"two\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"two\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"two\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"two\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"two\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"two\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"two\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 1m
+        exp_samples:
+          - labels: "waybill:outbox_pending:fresh{}"
+            value: 7
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 1m
+        exp_samples:
+          - labels: "waybill:sqs_messages:fresh{state=\"visible\"}"
+            value: 4
+          - labels: "waybill:sqs_messages:fresh{state=\"in_flight\"}"
+            value: 2
+          - labels: "waybill:sqs_messages:fresh{state=\"delayed\"}"
+            value: 1
+  - name: "missing scrape target suppresses backlog"
+    interval: 15s
+    input_series:
+      - series: "waybill_outbox_pending{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\"}"
+        values: "7+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"outbox\"}"
+        values: "30+0x12"
+      - series: "waybill_backlog_sample_success{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "1+0x12"
+      - series: "waybill_backlog_sample_timestamp_seconds{job=\"waybill-publisher\",instance=\"one\",source=\"sqs\"}"
+        values: "30+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"visible\"}"
+        values: "4+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"in_flight\"}"
+        values: "2+0x12"
+      - series: "waybill_sqs_messages{job=\"waybill-publisher\",instance=\"one\",service=\"publisher\",state=\"delayed\"}"
+        values: "1+0x12"
+    promql_expr_test:
+      - expr: waybill:outbox_pending:fresh
+        eval_time: 1m
+        exp_samples: []
+      - expr: waybill:sqs_messages:fresh
+        eval_time: 1m
+        exp_samples: []

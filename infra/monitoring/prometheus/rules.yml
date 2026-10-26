@@ -1,0 +1,24 @@
+groups:
+  - name: waybill-backlog
+    interval: 15s
+    rules:
+      - record: waybill:outbox_pending:fresh
+        expr: |
+          max(
+            waybill_outbox_pending{service="publisher"}
+            and on(job, instance) (up{job="waybill-publisher"} == 1)
+            and on(job, instance) (waybill_backlog_sample_success{source="outbox"} == 1)
+            and on(job, instance) (waybill_backlog_sample_timestamp_seconds{source="outbox"} > 0)
+            and on(job, instance) ((time() - waybill_backlog_sample_timestamp_seconds{source="outbox"}) < 90)
+            and on(job, instance) ((time() - waybill_backlog_sample_timestamp_seconds{source="outbox"}) >= 0)
+          )
+      - record: waybill:sqs_messages:fresh
+        expr: |
+          max by (state) (
+            waybill_sqs_messages{service="publisher"}
+            and on(job, instance) (up{job="waybill-publisher"} == 1)
+            and on(job, instance) (waybill_backlog_sample_success{source="sqs"} == 1)
+            and on(job, instance) (waybill_backlog_sample_timestamp_seconds{source="sqs"} > 0)
+            and on(job, instance) ((time() - waybill_backlog_sample_timestamp_seconds{source="sqs"}) < 90)
+            and on(job, instance) ((time() - waybill_backlog_sample_timestamp_seconds{source="sqs"}) >= 0)
+          )
