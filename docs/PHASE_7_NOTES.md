@@ -269,6 +269,6 @@ Read-only permissions and standby identity are separate checks. The reader accou
 
 This local setup has no replication slot or extra WAL-retention configuration. If the replica stays offline until the primary removes required WAL, it may need a new base backup. The scripts deliberately do not erase and rebuild its volume automatically. This is a learning setup, not a high-availability deployment or an automatic failover system.
 
-Delivery history, status summaries, dead-letter browsing, archived payload retrieval, and manual replay are implemented. The dashboard is still to be implemented. Hosted primary/replica selection remains deployment work.
+Delivery history, status summaries, dead-letter browsing, archived payload retrieval, and manual replay are implemented. This completes the local Phase 7 backend. Metrics, load testing, and backend hardening come next; the tenant dashboard will be built and connected afterward. Hosted primary/replica selection remains deployment work.
 
 References: [PostgreSQL standby setup](https://www.postgresql.org/docs/16/warm-standby.html), [pg_basebackup](https://www.postgresql.org/docs/16/app-pgbasebackup.html), [recovery functions](https://www.postgresql.org/docs/16/functions-admin.html), [read-only transactions](https://www.postgresql.org/docs/16/sql-set-transaction.html).

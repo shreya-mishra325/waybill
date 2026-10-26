@@ -69,7 +69,7 @@ flowchart LR
   grafana["Grafana - Phase 8"] -->|"Query service metrics"| prometheus
 ```
 
-HMAC signing, the local read replica, delivery read APIs, and outbox-based manual replay are implemented. The tenant dashboard, service metrics, and hosted replica remain planned. Automatic retries use `ChangeMessageVisibility` on the existing SQS message. Manual replay is a separate Phase 7 operation. On retry exhaustion, the worker archives the payload and persists the dead-letter state before calling `DeleteMessage`. Delivery attempts are at least once; receivers must handle duplicates.
+HMAC signing, the local read replica, delivery read APIs, and outbox-based manual replay are implemented. API, publisher, and worker metric collection are implemented. Background backlog sampling is also implemented. Local Prometheus/Grafana setup and provisioned service dashboards are implemented. The tenant dashboard and hosted replica remain pending. Automatic retries use `ChangeMessageVisibility` on the existing SQS message. Manual replay is a separate Phase 7 operation. On retry exhaustion, the worker archives the payload and persists the dead-letter state before calling `DeleteMessage`. Delivery attempts are at least once; receivers must handle duplicates.
 
 The tenant dashboard reads durable delivery records through the replica. Prometheus and Grafana will show service behavior across the API, publisher, and workers. Metrics do not replace tenant delivery history or replay auditing.
 
@@ -85,7 +85,7 @@ waybill/
 ├── docker-compose.replica.yml
 ├── infra/
 │   ├── postgres/
-│   └── monitoring/                     Planned in Phase 8
+│   └── monitoring/                     Prometheus rules and Grafana provisioning
 ├── .env.example
 ├── packages/
 │   ├── api/
@@ -118,7 +118,7 @@ Work one phase at a time. Propose a file plan before writing code. Keep the laye
 
 ## 6. Phases & Checkpoints
 
-Implementation order: finish the Phase 7 tenant dashboard, add service metrics in Phase 8, then use those measurements for Phase 9 load testing. FIFO, multiple regions, and Kafka remain separate Phase 10 experiments. Moving Prometheus and Grafana forward does not bring the other stretch goals into the current phase.
+Implementation order: complete the Phase 7 observability and replay backend, add service metrics in Phase 8, then use those measurements for Phase 9 load testing and backend hardening. Build and connect the authenticated tenant dashboard after the backend checkpoints. Hosted replication stays with deployment. FIFO, multiple regions, and Kafka remain separate optional Phase 10 experiments; they do not block dashboard integration.
 
 While finishing Phase 7, keep HTTP handling and delivery operations easy to instrument. Metric collection belongs at operation boundaries. Tenant IDs, event IDs, URLs, and error text stay in logs and database records rather than metric labels.
 
@@ -184,46 +184,50 @@ Done when: attempt timestamps grow exponentially, and exhausted events land in `
 - Notes: [Phase 6](./PHASE_6_NOTES.md). Local HTTP verification and a live AWS smoke test passed, including inline and S3-backed events. Tampered requests returned HTTP 401.
 - **Done when:** a tampered payload fails verification on the receiver side.
 
-### Phase 7 - Dashboard/API for Observability
+### Phase 7 - Observability and Replay APIs
 
-Dashboard layout, visual tokens, interactions, and API gaps: [design plan](./design.md).
+The tenant dashboard is deferred to the final integration checkpoints below. The existing public website is separate from the authenticated tenant dashboard.
+
 - [x] Add a separate replica client with read-only transactions and standby validation.
 - [x] Add a local Docker replica and verify routing with a controlled replication-lag test.
-- [ ] Configure a managed read replica for deployment.
+- [ ] Configure a managed read replica during deployment; this does not block local backend phases.
 - [x] Add tenant-filtered delivery history with status filtering, cursor pagination, and live replica HTTP tests.
 - [x] Add replica-backed status counts and a terminal-outcome success rate per tenant.
 - [x] Add paginated dead-letter browsing and bounded archived-payload retrieval from S3.
 - [x] Add idempotent manual replay through the transactional outbox, preserving original failures.
-- [ ] Build the tenant dashboard for delivery history, status counts, dead-letter browsing, and archived payload inspection.
-- [ ] Add replay controls that reuse an idempotency key while a request is pending and link the resulting new event to its original failure.
-- [ ] Show loading, empty, error, and replica-lag states; distinguish accepted replay commands from completed delivery.
-- [ ] Verify the full UI flow: inspect a failed delivery, open its payload, replay it, and follow the new delivery outcome while preserving the original failure.
 - Notes: [Phase 7](./PHASE_7_NOTES.md). Local replication, observability APIs, archived payload reads, and live replay are verified; the dashboard and hosted replication remain pending.
 - Delivery logs per tenant, success rate, DLQ browsing (pulling archived payloads from S3), manual replay (re-send to SQS).
 - **Replication:** develop against the local Docker physical replica; use a managed Postgres read replica for deployment and dashboard queries. Ingestion and worker status updates stay on the primary. This keeps dashboard read traffic off the write database.
-- **Done locally when:** the dashboard supports the complete failure-inspection and replay flow, and a deliberate replication-lag test confirms its reads use the replica. Managed replication remains a deployment requirement; local UI work does not depend on provisioning a hosted database.
+- **Backend done locally when:** history, summary, dead-letter inspection, and durable idempotent replay are verified, including tenant filtering and controlled replica lag. This is complete. Dashboard integration and managed replication remain explicitly separate work.
 
 ### Phase 8 - Service Metrics with Prometheus & Grafana
 
-Prometheus and Grafana move forward from the stretch goals so Phase 9 has measurements to work with. Start this phase after the tenant dashboard flow works.
+Prometheus and Grafana move forward from the stretch goals so Phase 9 has measurements to work with. Start this phase after the Phase 7 backend is verified. It does not depend on the tenant dashboard.
 
-- [ ] Define metric names, units, histogram buckets, and bounded labels before adding instrumentation. Labels may describe a fixed service, operation, outcome, status class, or deferral reason; exclude tenant IDs, event IDs, destination URLs, and free-form errors.
-- [ ] Add scrape endpoints for the API, outbox publisher, and delivery worker. Cover HTTP request counts and durations, publication results, webhook attempts and durations, retry scheduling, terminal outcomes, deferrals, and buffered reservations. Keep attempt counts separate from final delivery outcomes and SQS acknowledgements.
-- [ ] Collect pending-outbox counts and SQS queue depth through bounded background sampling. Do not run expensive database or AWS calls in the scrape request, and do not route tenant dashboard queries to the primary.
-- [ ] Add optional local Prometheus and Grafana services with persistent storage, bounded retention, and connections to all three process roles. Keep metrics and monitoring interfaces internal or bound to localhost during development.
-- [ ] Version the scrape configuration, Grafana data source, and dashboard definitions. Keep credentials in environment configuration rather than dashboard files.
-- [ ] Add Grafana panels for ingestion throughput and HTTP errors, webhook attempt throughput and p95 duration, retry/dead-letter rates, deferrals, buffered work, outbox backlog, and queue depth. Use a fixed test interval when comparing runs.
-- [ ] Verify scraping and panels with controlled success, receiver failure, retry, rate-limit, and replay scenarios. Check that completed-message redelivery does not count as another webhook attempt, and that missing targets or stale samples are visible.
-- [ ] Measure instrumentation overhead with the same small workload before and after collection is enabled. Confirm that a Prometheus or Grafana outage does not prevent ingestion or delivery.
-- [ ] Write `docs/PHASE_8_NOTES.md` with metric definitions, observed results, overhead, and dashboard setup after implementation.
+- [x] Define metric names, units, histogram buckets, and bounded labels before adding instrumentation. See [Phase 8 notes](./PHASE_8_NOTES.md). Labels may describe a fixed service, operation, outcome, status class, or deferral reason; exclude tenant IDs, event IDs, destination URLs, and free-form errors.
+- [x] Add opt-in API request metrics and a separate loopback-only scrape listener; verify bounded labels, parser errors, disconnects, and independent collection.
+- [x] Add scrape endpoints for the API, outbox publisher, and delivery worker. Cover HTTP request counts and durations, publication results, webhook attempts and durations, retry scheduling, terminal outcomes, deferrals, and buffered reservations. Keep attempt counts separate from final delivery outcomes and SQS acknowledgements.
+- [x] Collect pending-outbox counts and SQS queue depth through bounded background sampling. Do not run expensive database or AWS calls in the scrape request, and do not route tenant dashboard queries to the primary.
+- [x] Add optional local Prometheus and Grafana services with persistent storage, bounded retention, and connections to all three process roles. Keep metrics and monitoring interfaces internal or bound to localhost during development.
+- [x] Version the scrape configuration, Grafana data source, and dashboard definitions. Keep credentials in environment configuration rather than dashboard files.
+- [x] Add Grafana panels for ingestion throughput and HTTP errors, webhook attempt throughput and p95 duration, retry/dead-letter rates, deferrals, buffered work, outbox backlog, and queue depth. Use a fixed test interval when comparing runs.
+- [x] Verify all scrape targets, dashboard queries, authentication, freshness rules, missing targets, and volume persistence with isolated metric fixtures.
+- [x] Verify scraping and panels with controlled success, receiver failure, retry, rate-limit, and replay scenarios. Check that completed-message redelivery does not count as another webhook attempt, and that missing targets or stale samples are visible.
+- [x] Measure scoped API-ingestion and signed-webhook instrumentation probes with the same small workloads before and after collection is enabled. Record the excluded full-pipeline and sampler costs. Confirm that a Prometheus or Grafana outage does not prevent ingestion or delivery.
+- [x] Start `docs/PHASE_8_NOTES.md` with the metric contract, API configuration, and verified API checks.
+- [x] Record publisher/worker metric boundaries and isolated scenario results in Phase 8 notes.
+- [x] Complete Phase 8 notes with live monitoring results, scoped overhead measurements, and monitoring dashboard setup.
 
 Metrics are process-local observations and reset when a process restarts. Delivery and replay records in PostgreSQL remain the durable history. A webhook-attempt duration histogram measures the HTTP call; request-to-delivery latency needs separate measurement and cannot be inferred from it.
 
 **Done when:** Prometheus scrapes the API, publisher, and worker; Grafana displays the controlled test traffic; metric meanings and labels are documented; and monitoring can be stopped without breaking delivery. Dependency and container choices must be reviewed before installation.
 
+Local Phase 8 verification is complete. See the notes for controlled test settings and the limits of the component overhead probe.
+
 ### Phase 9 - Load Testing & Hardening
 
 - [ ] Choose a load tool such as `k6` or `autocannon` and record request rate, accepted volume, concurrency, tenant mix, payload sizes, receiver behavior, duration, and pass/fail criteria before each run.
+- [ ] Include full-worker instrumentation, background sampling, and monitoring process resource costs in the sustained baseline; the Phase 8 component probes did not measure these together.
 - [ ] Run with the Phase 8 metrics available. Record baseline throughput, HTTP rejections, request-to-delivery p95 and maximum latency, final outcomes, and backlog drain time alongside the service dashboards.
 - [ ] Revisit the Phase 5 fairness cases under sustained accepted queue pressure, including a larger accepted backlog, slow receivers, and more tenant counts. Measure quiet-tenant latency and busy-tenant completion time together.
 - [ ] Identify the first measured bottleneck, change one relevant path, and repeat the workload under comparable settings. Keep the reports and metric time ranges with the result.
@@ -241,6 +245,19 @@ Prometheus and Grafana are now scoped in Phase 8. The remaining goals are separa
 - [ ] Explore multi-region delivery workers. Define routing, ownership, regional dependencies, duplicate handling, and failover behavior before provisioning infrastructure.
 - [ ] Explore Kafka in an isolated comparison. Test partitioning, consumer groups, offset recovery, and replay without replacing the baseline SQS path during the experiment.
 - [ ] Record each experiment's motivation, measured benefit, and operational cost before adopting it.
+
+---
+
+### Final tenant dashboard integration
+
+Start after the required backend metrics, load-test, and hardening checkpoints. Optional Phase 10 experiments are not prerequisites. Preserve the existing public website.
+
+- [ ] Build the tenant dashboard for delivery history, status counts, dead-letter browsing, and archived payload inspection.
+- [ ] Add replay controls that reuse an idempotency key while a request is pending and link the resulting new event to its original failure.
+- [ ] Show loading, empty, error, and replica-lag states; distinguish accepted replay commands from completed delivery.
+- [ ] Verify the full UI flow: inspect a failed delivery, open its payload, replay it, and follow the new delivery outcome while preserving the original failure.
+- [ ] Enforce caller authentication and tenant ownership before exposing the dashboard APIs publicly.
+- [ ] Verify the dashboard against the final API responses, replica behavior, and replay semantics.
 
 ---
 
@@ -265,20 +282,28 @@ Prometheus and Grafana are now scoped in Phase 8. The remaining goals are separa
 
 ## 8. Deployment Plan
 
-Development currently runs locally with real AWS SQS and S3. Docker definitions exist for the API and worker, but a hosted release, CI workflow, and publisher service definition have not been verified. Hosting remains undecided; check physical-replica support, process hosting, private networking, and total cost before choosing a provider.
+Development currently runs locally with real AWS SQS and S3. Docker definitions exist for the API and worker. A backend CI workflow is implemented and its checks pass locally; its first GitHub run, a hosted release, and the publisher service definition remain unverified. Hosting remains undecided; check physical-replica support, process hosting, private networking, and total cost before choosing a provider.
 
 ### Local development through Phases 7-9
 
 - [x] Run PostgreSQL primary, local physical replica, and Redis in Docker; use the existing development SQS queue and S3 bucket.
-- [ ] Finish and verify the Phase 7 tenant dashboard locally.
-- [ ] Add local Prometheus and Grafana in Phase 8.
+- [ ] Finish Phases 8 and 9 backend checkpoints, then build and verify the tenant dashboard locally.
+- [x] Add local Prometheus and Grafana in Phase 8.
 - [ ] Run Phase 9 load tests against the development environment and record the supported workload and remaining limits.
 
 The local replica supports development and lag tests. It does not complete the managed-replica deployment requirement. Local work can continue without purchasing hosted infrastructure.
 
+### Backend work independent of the tenant dashboard
+
+The backend CI workflow was added ahead of the phase work and remains in the working tree. It can run without the deferred tenant UI. The workflow in `.github/workflows/backend.yml` checks backend and script types, validates the Prisma schema, and runs backend unit tests. A separate job applies migrations to a fresh runner database and runs outbox, replica-read, and replay repository tests sequentially. It starts only PostgreSQL and its physical replica; SQS sends are mocked and archive uploads are disabled.
+
+Local verification: all four backend/script type configurations and Prisma validation passed. The ordinary test run passed 52 tests; all three opt-in database suites then passed separately against temporary databases. All three migrations applied successfully, migration status was current, and the temporary containers and volumes were removed. The workflow must pass on GitHub before the CI checkpoint is considered verified. Web checks, container startup, service readiness and shutdown, caller authentication, and hosted infrastructure remain separate checkpoints. Phase 8 monitoring still needs its own implementation and verification.
+
 ### CI before the first hosted release
 
-- [ ] Add GitHub Actions checks for Bun tests, all package/script TypeScript configurations, and migration validation.
+- [x] Implement backend CI with backend/script type checks, unit tests, Prisma validation, and fresh-database migration checks; verify these checks locally.
+- [ ] Verify the first backend workflow run on GitHub.
+- [ ] Add web package checks to CI before the first hosted release.
 - [ ] Run database, replica, and replay repository tests against isolated CI databases, with no competing publisher or queue consumer.
 - [ ] Build the API and worker images from the actual workspace and lockfile; generate the Prisma client for the container runtime and verify startup.
 - [ ] Keep real AWS smoke tests separate from ordinary pull-request checks. Use an isolated environment and explicit credentials for tests that touch SQS or S3.
