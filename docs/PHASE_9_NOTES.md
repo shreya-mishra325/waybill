@@ -50,14 +50,11 @@ Each resource sample saves raw process metrics, host PID/CPU/RSS snapshots, and 
 
 Reports, request/receipt records, raw metric snapshots, telemetry, and child-process logs are under ignored `logs/load-<run-id>*` paths. Failed runs after publisher startup retain accepted events and their tenant records for inspection. Successful runs remove only their owned records after delivery and queue drain. The runner never purges the queue or uploads S3 fixtures. If a delivery unexpectedly exhausts its retries, the normal backend can still create its dead-letter archive; this runner does not delete such objects.
 
-## Pending checkpoints
+## Checkpoint status
 
-- Repeat the controlled worker-start backlog case with more than 1,000 preloaded busy events. The sustained-arrival comparison below is complete.
-- Further investigate busy-tenant tail latency and repeat the comparison before making broader capacity claims.
-- Verify retries, dead-letter recovery, replay idempotency, rate limits, and replica reads under load and recovery.
-- Consider sharding only if delivery-table measurements justify it.
+The local Phase 9 baseline, accepted-pressure comparison, worker confirmation hardening, larger controlled preload, and fault-recovery workload are complete. Busy-tenant tails remain substantial, and the measurements below describe tested workloads rather than a saturation or production-capacity limit. No delivery-table bottleneck was demonstrated, so sharding is deferred.
 
-The authenticated dashboard remains deferred until backend checkpoints are complete.
+The authenticated dashboard, GitHub sign-in, tenant authorization, and hosted production-readiness work remain separate checkpoints.
 
 ## Runner verification
 
@@ -191,4 +188,97 @@ Evidence is under `logs/load-<run-id>*` for each run. Fixed Grafana windows are 
 
 The final run's owned services stopped and its temporary database records were removed after successful delivery and repeated empty queue observations. The two nonpassing pressure runs retain 1,800 successful records each for inspection. No queue purge or S3 fixture upload was used. A read-only audit confirmed an empty queue and no unpublished outbox rows.
 
-Recovery workloads for retries, dead letters, replay idempotency, and replica reads under pressure remain pending. So does a larger controlled preload with worker startup separated from admission. The current results do not justify delivery-table sharding.
+At this checkpoint, recovery and the controlled preload were still pending. Their completed results are recorded below. The measured confirmation bottleneck did not justify delivery-table sharding.
+
+## Controlled larger preload
+
+`bun run test:load:preload` uses two temporary tenants and the signed receiver. It admits 1,200 busy requests at concurrency 20, then waits for all 1,200 owned outbox rows to be published and at least 1,200 visible queue messages with no in-flight or delayed messages. No delivery worker runs during admission or publication. The evidence is saved before the controlled worker start.
+
+The owned API's ingestion capacity is 1,200 for this profile so admission cannot hide dispatch pressure behind HTTP 429 responses. Its refill remains 10/second; worker delivery capacity/refill remain 10/10. This overrides only the temporary API process and does not change normal ingestion defaults. Both receivers are fast: slow-receiver interference was tested separately in the sustained six-tenant workload.
+
+After worker startup, one quiet request per second continues until every accepted busy event has its first signed receipt, with a minimum of three quiet requests. This stopping rule is declared before execution; the final quiet count is determined by busy completion. Every scheduled probe must be submitted and accepted. At least three probes must overlap 100 or more accepted busy events still awaiting receipt. Quiet p95 remains at most 30 seconds, maximum at most 90 seconds; busy p95 is bounded at 900 seconds and maximum at 1,200 seconds. The receiver and worker must have no receipts before startup. The worker-start, admission, publication-evidence, and completion timestamps are recorded separately.
+
+All accepted work must also have durable successful outcomes. Both process metrics and monitoring remain enabled through queue drain, and failures retain owned work for inspection. This test does not compare its adaptive quiet count with the fixed-duration pressure test as if they were identical workloads.
+
+### Completed preload checkpoint: 2026-10-27
+
+Run `015851c9-3d58-442b-b8a2-0efb90d3c5fa` passed. All 1,200 busy events were accepted, published, and visible before worker startup, with no in-flight/delayed messages or receiver receipts. The run then submitted 404 quiet probes. All 1,604 events reached the signed receiver and durable `SUCCEEDED` state, with no rejected or uncertain requests, invalid signatures, or duplicate calls.
+
+Quiet p95 was 7.232 seconds and maximum was 80.539 seconds, within the declared 30/90-second limits. Of the 404 quiet probes, 325 overlapped at least 100 accepted busy events awaiting receipt. The busy tenant completed in 471.340 seconds from its first submission, including admission and publication before worker startup; busy p95 was 420.600 seconds and maximum was 471.131 seconds. These tails remain material even though p95 passed.
+
+The report, pre-start queue evidence, requests, receipts, metrics, and resource samples are under `logs/load-015851c9-3d58-442b-b8a2-0efb90d3c5fa*`. The queue drained and the successful runner removed its owned records and processes.
+
+### Dashboard prerequisites
+
+The GitHub login/session and tenant-membership backend was implemented after these load checkpoints; see [authentication setup](./AUTHENTICATION.md) for its tests and pending real-provider verification. The load and recovery workloads use development caller-authentication bypass and do not measure the new session-check overhead. Session mode still needs OAuth configuration and a verified real sign-in before public exposure.
+
+## Recovery workload
+
+```bash
+bun run test:recovery
+```
+
+This check seeds 90 events across three temporary tenants through the database and transactional outbox, then continues HTTP ingestion across those tenants with a 350 ms delay after each response. It is a fault-recovery check, not a fixed-arrival capacity benchmark. The receiver adds 30 ms for background events. Each tenant gets an ingestion capacity of five with one token per second, and a dispatch capacity of two with one token per second. Delivery exhaustion uses three attempts for this fixture; the normal application default is unchanged.
+
+Each fault stage must start with at least ten unfinished background events. The stages cover a transient HTTP failure, exhausted delivery using an existing S3 payload, ten concurrent requests with one replay key, tenant ingestion and dispatch limits, paused replica replay, a stopped replica, API restart, publisher leader crash with standby takeover, and worker crash while it owns buffered messages. The complete run is bounded to 15 minutes.
+
+All owned events must have verified signed calls and the expected durable outcome: the original exhausted event stays dead-lettered and every other event succeeds. A replay key must retain one identity after API restart. Reads must remain tenant-scoped, and a replica outage must not prevent primary writes or delivery. Monitoring must recover and the queue/outbox must drain. Duplicate calls are recorded separately from successful receiver effects. The receiver's deduplication set is only an in-memory fixture, not a production exactly-once guarantee.
+
+The runner saves its manifest before creating work and logs under `logs/recovery-<run-id>*`. It restores the local replica after pause/outage, stops its own processes, and removes only its own database records after a passing run. Work from a failed published run remains for inspection. No queue purge or S3 fixture upload is performed.
+
+## Replica recovery finding: 2026-10-27
+
+The first recovery run, `d296cb33-6bee-42fc-b33d-5675475121fb`, passed transient retry, exhausted delivery, ten concurrent replay requests producing one event, and ingestion/dispatch rate-limit checks. It then timed out reading the probe delivery from the replica. This run failed and is not a passing recovery result.
+
+The primary had the successful delivery, but the replica did not. PostgreSQL reported that WAL segment `000000010000000000000005` had already been removed. The replica process could answer queries and `pg_is_in_recovery()` returned true, so the old container health check incorrectly appeared healthy. There was no persistent replication slot protecting history while the standby was disconnected.
+
+The local setup now creates a physical replication slot, uses it for the base backup and streaming, and sets `max_slot_wal_keep_size` to 256 MB. This bounds retained history; a sufficiently long outage can still invalidate the slot. Setup waits for an active slot-backed streaming connection to replay a captured primary WAL position. Container health also requires an active streaming receiver. The recovery runner checks catch-up before creating traffic.
+
+```bash
+bun run setup:replica
+bun run setup:replica --reseed
+bun run test:replica
+```
+
+`--reseed` stops only the replica and moves its old data directory aside before taking a new base backup. The stale copy was retained at `/var/lib/postgresql/data/pgdata.before-reseed-20261027144330` inside the replica volume. The primary and its accepted event records were preserved. Reseeding needs disk space for both copies; retained copies require deliberate cleanup later.
+
+After rebuilding, the replica passed initial catch-up, paused-replay isolation, rejected writes, and resume/catch-up checks. Repeating normal setup also passed. The first run's logs, failed report, and retained records remain available for diagnosis. Its interrupted deliveries were drained separately: 359 events succeeded and the original exhausted event remained dead-lettered. The drain verified repeated empty queue/outbox observations and retained all 360 records; its result is saved alongside the failed run.
+
+References: [PostgreSQL streaming replication and slots](https://www.postgresql.org/docs/16/warm-standby.html), [base backup slot handling](https://www.postgresql.org/docs/16/app-pgbasebackup.html), and [replication slot retention](https://www.postgresql.org/docs/16/view-pg-replication-slots.html).
+
+## Passing recovery run: 2026-10-27
+
+Run `3b3456e4-c06b-4d97-88e3-1fc30f0bbd76` passed after the replication fix. The declared workload and limits were unchanged. The manifest, HTTP requests, signed call counts, process logs, pre-crash/final metric snapshots, and result are under `logs/recovery-3b3456e4-c06b-4d97-88e3-1fc30f0bbd76*`.
+
+| Check | Observed result |
+| --- | --- |
+| Total owned events | 388 |
+| Background events | 90 seeded through the outbox, 284 accepted over HTTP |
+| Durable outcomes | 387 succeeded, one intentionally dead-lettered |
+| Transient failure | Two calls, then success |
+| Exhausted event | Three failed attempts; original failure history retained |
+| Replay | Ten concurrent requests returned one event; the same key retained that identity after API restart |
+| Ingestion burst | Five accepted, 20 rejected with `Retry-After`; another tenant retained its budget |
+| Dispatch limit | Deferred work subsequently succeeded; rate-limit deferral counter increased |
+| Replica lag | Primary delivery completed while replica reads stayed frozen; reads caught up after resume |
+| Replica outage | Reads returned 503; primary ingestion and delivery continued; reads recovered after restart |
+| Publisher leader crash | Standby acquired leadership and published newly accepted work |
+| Worker crash | Work continued after restart and all owned events reached the expected outcome |
+| Unexpected request outcomes / invalid signatures / unexpected payloads | 0 / 0 / 0 |
+| Repeated webhook calls beyond the first | Four, including expected retries and one duplicate successful call |
+| Unique successful receiver effects | 387 |
+| Final state | Queue/outbox drained, all three monitoring targets healthy, owned processes stopped |
+
+Every fault phase began with outstanding background work: 92, 90, 120, 124, 125, 129, 127, and 133 events respectively. The successful run removed its own temporary database records only after durable outcome and queue-drain checks. The earlier failed run remains preserved.
+
+The duplicate successful call is consistent with at-least-once delivery during a crash window. Receivers must handle repeated event IDs. This test used an in-memory set to count logical effects; it does not establish durable receiver idempotency or exactly-once delivery. Process counters reset during restarts, so the report uses database outcomes for final event accounting rather than adding reset counters as if they were continuous.
+
+Backend types passed, and the backend suite passed 102 tests with four opt-in database tests skipped. The repaired replica also passed the live catch-up, paused-replay, rejected-write, and resume checks. Shell syntax and Compose configuration validation passed. Successful CI for the previously committed backend is recorded in the guide; these uncommitted changes still need their own CI run.
+
+## Phase 9 decision and remaining limits
+
+The reproducible bottleneck was the confirmation barrier between receive batches. Sharing bounded pending confirmations improved quiet-tenant p95 from 69.864 to 8.468 seconds in the unchanged pressure comparison. The larger preload and recovery run completed without losing accepted work. The recovery workload additionally exposed stale replication that the original health check missed; slot-backed streaming, catch-up verification, and explicit reseeding now address that local failure.
+
+There is no evidence that the `deliveries` table is the bottleneck, so no sharding or schema routing was added. The result is scoped to this laptop, local PostgreSQL/Redis/receiver, and the configured real AWS queue and bucket. Busy completion can still take several minutes, including more than eleven minutes in the slow-receiver pressure run. A production latency target, saturation capacity, multiple active delivery workers, a wider receiver-latency distribution, and long-duration failure soak tests remain unmeasured.
+
+Local Phase 9 checkpoints are complete. This does not complete GitHub authentication, tenant ownership enforcement, graceful shutdown/readiness, container release verification, managed replication, or hosted deployment. No website changes, dependency additions, commits, or pushes were made as part of the recovery checkpoint.

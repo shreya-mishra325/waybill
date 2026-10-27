@@ -230,11 +230,11 @@ Local Phase 8 verification is complete. See the notes for controlled test settin
 - [x] Include full-worker instrumentation, background sampling, and monitoring process resource costs in the sustained baseline; the Phase 8 component probes did not measure these together.
 - [x] Run with the Phase 8 metrics available. Record baseline throughput, HTTP rejections, request-to-delivery p95 and maximum latency, final outcomes, and backlog drain time alongside the service dashboards. The 2026-10-27 local baseline accepted and delivered all 300 events at 5 requests/second across three tenants: overall receiver p95 6.667 seconds, maximum 8.056 seconds, and no HTTP rejections. See [Phase 9 notes](./PHASE_9_NOTES.md) for workload, resource evidence, and limitations.
 - [x] Revisit sustained accepted pressure with one busy and five quiet tenants, including a 100 ms busy-receiver delay. All 1,800 events arrived; maximum accepted busy work awaiting receipt reached 1,015 before hardening. Record quiet latency and busy completion together.
-- [ ] Repeat the controlled worker-start backlog case with more than 1,000 preloaded busy events, retaining quiet latency and busy completion measurements. Sustained arrivals do not replace that preload check.
-- [x] Address the confirmation barrier between receive batches and repeat the unchanged 1,800-event workload. Sharing at most ten pending deletes per receive cycle reduced worst quiet-tenant p95 from 69.864 to 8.468 seconds, with every accepted event durably successful. Reports, queue-operation counts, resource observations, and fixed metric windows are in [Phase 9 notes](./PHASE_9_NOTES.md). Busy-tail and recovery checks remain pending.
-- [ ] Verify that retries, dead-letter handling, replay idempotency, rate limits, and replica reads remain correct under load and recovery.
-- [ ] Consider sharding only if measurements show the `deliveries` table is the bottleneck. If justified, split by `tenantId` hash across two Postgres schemas or databases, route through repositories, and document replica routing and cross-tenant query costs.
-- [ ] Write `docs/PHASE_9_NOTES.md` with the before/after measurements, remaining limits, and any sharding tradeoffs after implementation.
+- [x] Repeat the controlled worker-start backlog case with more than 1,000 preloaded busy events. The 2026-10-27 run confirmed 1,200 published and visible events before worker startup, then delivered those events and all 404 quiet probes. Quiet p95 was 7.232 seconds, maximum 80.539 seconds; busy completion including preload was 471.340 seconds. See Phase 9 notes for evidence and remaining limits.
+- [x] Address the confirmation barrier between receive batches and repeat the unchanged 1,800-event workload. Sharing at most ten pending deletes per receive cycle reduced worst quiet-tenant p95 from 69.864 to 8.468 seconds, with every accepted event durably successful. Reports, queue-operation counts, resource observations, and fixed metric windows are in [Phase 9 notes](./PHASE_9_NOTES.md). Busy-tail limits are recorded; the recovery results are linked below.
+- [x] Verify retries, dead-letter handling, replay idempotency, rate limits, replica reads, API restart, publisher takeover, and worker-crash recovery under background load. The recovery run reached 387 successful events and one intentional dead letter, with no lost accepted work. Fix stale local replication using a bounded-retention physical slot, streaming health, catch-up checks, and explicit reseeding. See [Phase 9 notes](./PHASE_9_NOTES.md).
+- [x] Evaluate sharding against the measurements. No delivery-table bottleneck was demonstrated; retain the current schema and repository routing. Revisit only with delivery-table evidence, including replica routing and cross-tenant query costs.
+- [x] Complete `docs/PHASE_9_NOTES.md` with the before/after measurements, preload and recovery evidence, remaining limits, and the decision to defer sharding.
 
 **Done when:** a reproducible workload exposes a bottleneck, the measured change improves it without losing accepted work or breaking delivery semantics, and the write-up connects load-test results to service metrics. Sharding is conditional, not a completion requirement.
 
@@ -249,6 +249,18 @@ Prometheus and Grafana are now scoped in Phase 8. The remaining goals are separa
 
 ---
 
+### Dashboard authentication backend
+
+- [x] Add GitHub OAuth with browser-bound, single-use state and S256 PKCE, using existing dependencies.
+- [x] Add hashed, expiring server-side sessions, logout, exact-origin CORS, and CSRF protection for writes.
+- [x] Require primary-backed tenant membership for ingestion, delivery history, summary, archived payload reads, and replay in session mode. Keep delivery reads on the replica and deny its reader access to authentication tables.
+- [x] Add an explicit local command to grant or revoke an existing user's tenant membership; never auto-assign existing tenants at signup.
+- [x] Verify mocked provider flows, HTTP guards, real session persistence, concurrent state consumption, and access revocation. Apply the additive local migration.
+- [ ] Configure the GitHub OAuth app and verify a real browser sign-in, tenant grant, authorized read/write, and logout.
+- [ ] Add machine-to-machine ingestion credentials before exposing integration clients; this checkpoint supports cookie sessions only.
+
+See [authentication setup and contract](./AUTHENTICATION.md). The local environment remains in development bypass mode until OAuth credentials are configured. Production rejects that bypass. GitHub authentication is implemented and locally tested, but the real-provider checkpoint is still open.
+
 ### Final tenant dashboard integration
 
 Start after the required backend metrics, load-test, and hardening checkpoints. Optional Phase 10 experiments are not prerequisites. Preserve the existing public website.
@@ -257,7 +269,7 @@ Start after the required backend metrics, load-test, and hardening checkpoints. 
 - [ ] Add replay controls that reuse an idempotency key while a request is pending and link the resulting new event to its original failure.
 - [ ] Show loading, empty, error, and replica-lag states; distinguish accepted replay commands from completed delivery.
 - [ ] Verify the full UI flow: inspect a failed delivery, open its payload, replay it, and follow the new delivery outcome while preserving the original failure.
-- [ ] Enforce caller authentication and tenant ownership before exposing the dashboard APIs publicly.
+- [ ] Enable and verify GitHub session authentication and tenant membership end to end before exposing the dashboard APIs publicly. The backend checks are implemented; OAuth configuration and dashboard integration remain pending.
 - [ ] Verify the dashboard against the final API responses, replica behavior, and replay semantics.
 
 ---
@@ -283,29 +295,30 @@ Start after the required backend metrics, load-test, and hardening checkpoints. 
 
 ## 8. Deployment Plan
 
-Development currently runs locally with real AWS SQS and S3. Docker definitions exist for the API and worker. A backend CI workflow is implemented and its checks pass locally; its first GitHub run, a hosted release, and the publisher service definition remain unverified. Hosting remains undecided; check physical-replica support, process hosting, private networking, and total cost before choosing a provider.
+Development currently runs locally with real AWS SQS and S3. Docker definitions exist for the API and worker. The backend CI workflow passes locally and on GitHub. A hosted release and the publisher service definition remain unverified. Hosting remains undecided; check physical-replica support, process hosting, private networking, and total cost before choosing a provider.
 
 ### Local development through Phases 7-9
 
 - [x] Run PostgreSQL primary, local physical replica, and Redis in Docker; use the existing development SQS queue and S3 bucket.
-- [ ] Finish Phases 8 and 9 backend checkpoints, then build and verify the tenant dashboard locally.
+- [x] Finish the local Phase 8 and 9 backend checkpoints.
+- [ ] Build and verify the tenant dashboard locally after its authentication and tenant-access backend is ready.
 - [x] Add local Prometheus and Grafana in Phase 8.
-- [ ] Run Phase 9 load tests against the development environment and record the supported workload and remaining limits.
+- [x] Run Phase 9 load tests against the development environment and record the tested workloads and remaining limits.
 
 The local replica supports development and lag tests. It does not complete the managed-replica deployment requirement. Local work can continue without purchasing hosted infrastructure.
 
 ### Backend work independent of the tenant dashboard
 
-The backend CI workflow was added ahead of the phase work and remains in the working tree. It can run without the deferred tenant UI. The workflow in `.github/workflows/backend.yml` checks backend and script types, validates the Prisma schema, and runs backend unit tests. A separate job applies migrations to a fresh runner database and runs outbox, replica-read, and replay repository tests sequentially. It starts only PostgreSQL and its physical replica; SQS sends are mocked and archive uploads are disabled.
+The backend CI workflow was added ahead of dashboard integration and is committed. It can run without the deferred tenant UI. The workflow in `.github/workflows/backend.yml` checks backend and script types, validates the Prisma schema, and runs backend unit tests. A separate job applies migrations to a fresh runner database and runs outbox, replica-read, and replay repository tests sequentially. It starts only PostgreSQL and its physical replica; SQS sends are mocked and archive uploads are disabled.
 
-Local verification: all four backend/script type configurations and Prisma validation passed. The ordinary test run passed 52 tests; all three opt-in database suites then passed separately against temporary databases. All three migrations applied successfully, migration status was current, and the temporary containers and volumes were removed. The workflow must pass on GitHub before the CI checkpoint is considered verified. Web checks, container startup, service readiness and shutdown, caller authentication, and hosted infrastructure remain separate checkpoints. Phase 8 monitoring still needs its own implementation and verification.
+Local verification: all four backend/script type configurations passed. The latest ordinary backend test run passed 102 tests, with four opt-in database tests skipped. The replica catch-up, controlled lag, read-only access, and resume checks also passed after the Phase 9 replication fix. Earlier isolated database tests covered migrations, outbox publication, replica reads, and concurrent replay. The [backend workflow passed on GitHub](https://github.com/shreya-mishra325/waybill/actions/runs/40399310276), including its isolated database job; current uncommitted changes still need their own CI run. Phase 8 monitoring is complete locally. Web CI, container startup, service readiness and graceful shutdown, caller authentication, and hosted infrastructure remain separate checkpoints.
 
 ### CI before the first hosted release
 
 - [x] Implement backend CI with backend/script type checks, unit tests, Prisma validation, and fresh-database migration checks; verify these checks locally.
-- [ ] Verify the first backend workflow run on GitHub.
+- [x] Verify the first backend workflow run on GitHub. The successful run is linked above.
 - [ ] Add web package checks to CI before the first hosted release.
-- [ ] Run database, replica, and replay repository tests against isolated CI databases, with no competing publisher or queue consumer.
+- [x] Run database, replica, and replay repository tests against isolated CI databases, with no competing publisher or queue consumer.
 - [ ] Build the API and worker images from the actual workspace and lockfile; generate the Prisma client for the container runtime and verify startup.
 - [ ] Keep real AWS smoke tests separate from ordinary pull-request checks. Use an isolated environment and explicit credentials for tests that touch SQS or S3.
 
