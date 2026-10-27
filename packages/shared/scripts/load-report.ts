@@ -14,6 +14,7 @@ export type LoadReceipt = { tenantId: string; at: number; calls: number };
 export type LoadOutcome = { eventId: string; tenantId: string; status: string; attemptCount: number };
 export type LoadLimits = {
   planned: number; p95Ms: number; maxMs: number; maxScheduleLagMs: number; requireAllAccepted: boolean;
+  preload?: { expected: number; published: number; visible: number; inFlight: number; delayed: number; receiptsBeforeStart: number };
   fairness?: { busyTenantId: string; quietTenantIds: string[]; busyRequests: number; quietRequestsPerTenant: number;
     busyP95Ms: number; busyMaxMs: number; minBusyPending: number; minOverlappingRequests: number };
 };
@@ -81,6 +82,13 @@ export function loadReport(requests: LoadRequest[], receipts: Map<string, LoadRe
     return tenant.accepted && (tenant.p95Ms === null || tenant.p95Ms > p95Limit || tenant.maxMs === null || tenant.maxMs > maxLimit);
   })) {
     failures.push("A tenant exceeded the declared delivery latency limits.");
+  }
+  if (limits.preload) {
+    const preload = limits.preload;
+    if (preload.expected < 1001 || preload.published !== preload.expected || preload.visible < preload.expected ||
+        preload.inFlight !== 0 || preload.delayed !== 0 || preload.receiptsBeforeStart !== 0) {
+      failures.push("The complete accepted backlog was not confirmed before worker startup.");
+    }
   }
   if (limits.fairness) {
     const fairness = limits.fairness;

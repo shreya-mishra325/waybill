@@ -74,3 +74,12 @@ describe("busy and quiet load", () => {
     expect(loadReport(overlapping, observed, outcomes, { ...limits, fairness }).passed).toBe(false);
   });
 });
+
+
+test("preload evidence requires complete publication and visible work before any consumer starts", () => {
+  const preload = { expected: 1200, published: 1200, visible: 1200, inFlight: 0, delayed: 0, receiptsBeforeStart: 0 };
+  expect(loadReport(requests, receipts(), outcomes, { ...limits, preload }).passed).toBe(true);
+  for (const changed of [{ published: 1199 }, { visible: 1199 }, { inFlight: 1 }, { delayed: 1 }, { receiptsBeforeStart: 1 }, { expected: 1000 }]) {
+    expect(loadReport(requests, receipts(), outcomes, { ...limits, preload: { ...preload, ...changed } }).passed).toBe(false);
+  }
+});

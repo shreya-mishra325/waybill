@@ -32,46 +32,53 @@ Each request has a fixed scheduled time; overload is recorded rather than hidden
 Options: LOAD_DURATION_SECONDS (10..600), LOAD_RATE (1..100), LOAD_CONCURRENCY (1..100), LOAD_TENANTS (1..20),
 LOAD_PAYLOAD_BYTES (1..131072), LOAD_RECEIVER_DELAY_MS (0..1000), LOAD_DRAIN_SECONDS (30..1800),
 LOAD_P95_MS, LOAD_MAX_MS, LOAD_SCHEDULE_LAG_MS.
+--preload: 1200 busy requests admitted at concurrency 20, fully published before worker startup; quiet probes continue until busy receipts finish.
+LOAD_PRELOAD_REQUESTS (1001..5000) changes the preload. This profile requires two tenants.
 --pressure defaults: 120 seconds, 6 tenants, busy tenant 10/second, each quiet tenant 1/second, busy receiver delay 100ms.
 Pressure options: LOAD_BUSY_RATE, LOAD_BUSY_RECEIVER_DELAY_MS, LOAD_BUSY_P95_MS, LOAD_BUSY_MAX_MS, LOAD_MIN_BUSY_PENDING.
 Quiet limits stay 30-second p95 / 90-second maximum; busy limits are 600 / 900 seconds. See docs/PHASE_9_NOTES.md.
 No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Reports and process logs go under logs/.`);
     return;
   }
-  if (process.argv.slice(2).some(argument => argument !== "--pressure")) throw new Error("Only --help and --pressure are supported");
+  if (process.argv.slice(2).some(argument => argument !== "--pressure" && argument !== "--preload")) throw new Error("Only --help, --pressure, and --preload are supported");
+  const preload = process.argv.includes("--preload");
   const pressure = process.argv.includes("--pressure");
+  if (preload && pressure) throw new Error("Choose either preload or pressure");
+  const preloadRequests = integer("LOAD_PRELOAD_REQUESTS", 1200, 1001, 5000);
   const busyRate = pressure ? integer("LOAD_BUSY_RATE", 10, 1, 50) : undefined;
-  const tenantCount = integer("LOAD_TENANTS", pressure ? 6 : 3, pressure ? 2 : 1, 20);
+  const tenantCount = integer("LOAD_TENANTS", preload ? 2 : pressure ? 6 : 3, preload || pressure ? 2 : 1, 20);
+  if (preload && tenantCount !== 2) throw new Error("Preload uses one busy and one quiet tenant");
   const database = new URL(process.env.DATABASE_URL ?? "");
   if (!["localhost", "127.0.0.1"].includes(database.hostname) || database.port !== "15432") throw new Error("Use the local Waybill database on 15432");
   if (new URL(process.env.SQS_QUEUE_URL ?? "").pathname.endsWith(".fifo")) throw new Error("The baseline requires the existing standard queue");
   database.searchParams.set("socket_timeout", "10");
   const config = {
-    profile: pressure ? "pressure" : "balanced",
-    durationSeconds: integer("LOAD_DURATION_SECONDS", pressure ? 120 : 60, 10, 600), rate: integer("LOAD_RATE", busyRate === undefined ? 5 : busyRate + tenantCount - 1, 1, 100),
+    profile: preload ? "preload" : pressure ? "pressure" : "balanced", preloadRequests: preload ? preloadRequests : 0,
+    quietStopRule: preload ? "one request/second until all accepted busy work has a signed receipt, minimum three" : undefined,
+    durationSeconds: preload ? 0 : integer("LOAD_DURATION_SECONDS", pressure ? 120 : 60, 10, 600), rate: preload ? 1 : integer("LOAD_RATE", busyRate === undefined ? 5 : busyRate + tenantCount - 1, 1, 100),
     concurrency: integer("LOAD_CONCURRENCY", 20, 1, 100), tenantCount, busyRate,
     busyReceiverDelayMs: integer("LOAD_BUSY_RECEIVER_DELAY_MS", pressure ? 100 : 0, 0, 1000),
-    busyP95Ms: integer("LOAD_BUSY_P95_MS", 600000, 1, 1800000), busyMaxMs: integer("LOAD_BUSY_MAX_MS", 900000, 1, 1800000),
+    busyP95Ms: integer("LOAD_BUSY_P95_MS", preload ? 900000 : 600000, 1, 1800000), busyMaxMs: integer("LOAD_BUSY_MAX_MS", preload ? 1200000 : 900000, 1, 1800000),
     minBusyPending: integer("LOAD_MIN_BUSY_PENDING", 100, 1, 100000),
     payloadBytes: integer("LOAD_PAYLOAD_BYTES", 1024, 1, 131072), receiverDelayMs: integer("LOAD_RECEIVER_DELAY_MS", 0, 0, 1000),
-    drainSeconds: integer("LOAD_DRAIN_SECONDS", pressure ? 900 : 180, 30, 1800), p95Ms: integer("LOAD_P95_MS", 30000, 1, 1800000),
+    drainSeconds: integer("LOAD_DRAIN_SECONDS", preload ? 1200 : pressure ? 900 : 180, 30, 1800), p95Ms: integer("LOAD_P95_MS", 30000, 1, 1800000),
     maxMs: integer("LOAD_MAX_MS", 90000, 1, 1800000), maxScheduleLagMs: integer("LOAD_SCHEDULE_LAG_MS", 250, 1, 10000),
     requireAllAccepted: true, sampleIntervalMs: 10000, apiPort: 3110,
-    ingestionBudget: { capacity: 20, refillPerSecond: 10 }, deliveryBudget: { capacity: 10, refillPerSecond: 10 },
+    ingestionBudget: { capacity: preload ? preloadRequests : 20, refillPerSecond: 10 }, deliveryBudget: { capacity: 10, refillPerSecond: 10 },
   };
   if (busyRate !== undefined && config.rate !== busyRate + tenantCount - 1) throw new Error("Pressure LOAD_RATE must equal LOAD_BUSY_RATE plus one request per quiet tenant");
   const runId = crypto.randomUUID();
   const prefix = `phase9.${runId}.`;
   const tenants = Array.from({ length: config.tenantCount }, (_, index) => ({ id: crypto.randomUUID(), name: `phase9-load-${index}`, hmacSecret: crypto.randomUUID() }));
   const secrets = new Map<string, string>(tenants.map(tenant => [tenant.id, tenant.hmacSecret]));
-  const planned = config.rate * config.durationSeconds;
-  const limits: LoadLimits = { ...config, planned, fairness: pressure ? {
-    busyTenantId: tenants[0]!.id, quietTenantIds: tenants.slice(1).map(tenant => tenant.id), busyRequests: busyRate! * config.durationSeconds,
+  let planned = preload ? preloadRequests : config.rate * config.durationSeconds;
+  const limits: LoadLimits = { ...config, planned, fairness: pressure || preload ? {
+    busyTenantId: tenants[0]!.id, quietTenantIds: tenants.slice(1).map(tenant => tenant.id), busyRequests: preload ? preloadRequests : busyRate! * config.durationSeconds,
     quietRequestsPerTenant: config.durationSeconds, busyP95Ms: config.busyP95Ms, busyMaxMs: config.busyMaxMs,
     minBusyPending: config.minBusyPending, minOverlappingRequests: 3,
   } : undefined };
-  const tenantForSequence = (sequence: number) => tenants[loadTenantIndex(sequence, tenants.length, busyRate)]!;
-  const busyPending = () => pressure ? requests.filter(request => request.tenantId === tenants[0]!.id && request.status === 201 && request.eventId && !receipts.has(request.eventId)).length : 0;
+  const tenantForSequence = (sequence: number) => tenants[preload ? sequence < preloadRequests ? 0 : 1 : loadTenantIndex(sequence, tenants.length, busyRate)]!;
+  const busyPending = () => pressure || preload ? requests.filter(request => request.tenantId === tenants[0]!.id && request.status === 201 && request.eventId && !receipts.has(request.eventId)).length : 0;
   const base = resolve(root, `logs/load-${runId}`);
   const requests: LoadRequest[] = [];
   const receipts = new Map<string, LoadReceipt>();
@@ -98,6 +105,9 @@ No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Report
   let failure: unknown;
   let outcome: ReturnType<typeof loadReport> | undefined;
   let outcomes: LoadOutcome[] = [];
+  let preloadStartedAt = 0;
+  let preloadFinishedAt = 0;
+  let workerStartedAt = 0;
   let startedAt = 0;
   let submissionsFinishedAt = 0;
   let durableCompleteAt = 0;
@@ -109,13 +119,21 @@ No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Report
     abort.signal.throwIfAborted();
     for (const entry of children) if (entry.child.exitCode !== null) throw new Error(`${entry.role} exited during load; inspect its run log`);
   }
-  async function queueEmpty() {
+  async function queueDepth() {
     queueChecks++;
     const result = await sqs.send(new GetQueueAttributesCommand({ QueueUrl: process.env.SQS_QUEUE_URL,
       AttributeNames: ["ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible", "ApproximateNumberOfMessagesDelayed"] }),
       { abortSignal: AbortSignal.timeout(8000) });
-    return (["ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible", "ApproximateNumberOfMessagesDelayed"] as const)
-      .every(name => result.Attributes?.[name] === "0");
+    const counts = (["ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible", "ApproximateNumberOfMessagesDelayed"] as const).map(name => {
+      const raw = result.Attributes?.[name];
+      const value = Number(raw);
+      if (raw === undefined || !Number.isSafeInteger(value) || value < 0) throw new Error("Missing or invalid queue depth");
+      return value;
+    });
+    return { visible: counts[0]!, inFlight: counts[1]!, delayed: counts[2]! };
+  }
+  async function queueEmpty() {
+    return Object.values(await queueDepth()).every(value => value === 0);
   }
   async function query(expression: string) {
     const response = await fetch(`http://127.0.0.1:9090/api/v1/query?query=${encodeURIComponent(expression)}`, { signal: AbortSignal.timeout(5000) });
@@ -143,7 +161,7 @@ No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Report
   }
   async function submit(sequence: number, scheduledAt: number) {
     const tenant = tenantForSequence(sequence);
-    const entry: LoadRequest = { sequence, tenantId: tenant.id, scheduledAt, sentAt: Date.now(), busyPendingAtSubmission: pressure ? busyPending() : undefined };
+    const entry: LoadRequest = { sequence, tenantId: tenant.id, scheduledAt, sentAt: Date.now(), busyPendingAtSubmission: pressure || preload ? busyPending() : undefined };
     requests.push(entry);
     try {
       const response = await fetch(`http://127.0.0.1:${config.apiPort}/events`, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -162,9 +180,10 @@ No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Report
   try {
     await mkdir(resolve(root, "logs"), { recursive: true });
     await Bun.write(`${base}-manifest.json`, JSON.stringify({ runId, prefix, config, limits, planned, tenantIds: tenants.map(tenant => tenant.id),
-      tool: "Bun fixed-arrival HTTP generator", declaredAt: new Date().toISOString(), machine: { platform: platform(), arch: arch(), cpu: cpus()[0]?.model, cpuCount: cpus().length },
+      apiAuthentication: "development", tool: "Bun fixed-arrival HTTP generator", declaredAt: new Date().toISOString(), machine: { platform: platform(), arch: arch(), cpu: cpus()[0]?.model, cpuCount: cpus().length },
       passCriteria: "Every scheduled request accepted, every accepted event signed and durably succeeded, each tenant within p95/max limits, schedule lag within limit, queue/outbox drained, Prometheus counters and background samples verified, resource samples available" }, null, 2));
-    console.log(`Declared load: ${planned} requests, ${config.rate}/second for ${config.durationSeconds}s, ${config.tenantCount} tenants, ${config.payloadBytes}-byte payload data, quiet receiver delay ${config.receiverDelayMs}ms, busy receiver delay ${config.busyReceiverDelayMs}ms, busy rate ${busyRate ?? "balanced"}.`);
+    if (preload) console.log(`Declared preload: ${preloadRequests} busy requests at concurrency ${config.concurrency}, confirmed publication before worker start, quiet probes at 1/second until busy completion.`);
+    else console.log(`Declared load: ${planned} requests, ${config.rate}/second for ${config.durationSeconds}s, ${config.tenantCount} tenants, ${config.payloadBytes}-byte payload data, quiet receiver delay ${config.receiverDelayMs}ms, busy receiver delay ${config.busyReceiverDelayMs}ms, busy rate ${busyRate ?? "balanced"}.`);
     for (const port of [config.apiPort, 9100, 9101, 9102]) {
       const probe = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => new Response(null) });
       await probe.stop(true);
@@ -213,9 +232,9 @@ No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Report
       }
     } });
     target = new URL("/webhook", receiver.url).toString();
-    const env = { API_PORT: String(config.apiPort), DATABASE_URL: database.toString(), RECEIVER_URL: target, METRICS_ENABLED: "true", METRICS_HOST: "127.0.0.1",
+    const env = { API_AUTH_MODE: "development", API_PORT: String(config.apiPort), DATABASE_URL: database.toString(), RECEIVER_URL: target, METRICS_ENABLED: "true", METRICS_HOST: "127.0.0.1",
       API_METRICS_PORT: "9100", PUBLISHER_METRICS_PORT: "9101", WORKER_METRICS_PORT: "9102",
-      INGESTION_RATE_LIMIT_CAPACITY: "20", INGESTION_RATE_LIMIT_REFILL_PER_SECOND: "10", DELIVERY_RATE_LIMIT_CAPACITY: "10", DELIVERY_RATE_LIMIT_REFILL_PER_SECOND: "10",
+      INGESTION_RATE_LIMIT_CAPACITY: String(config.ingestionBudget.capacity), INGESTION_RATE_LIMIT_REFILL_PER_SECOND: "10", DELIVERY_RATE_LIMIT_CAPACITY: "10", DELIVERY_RATE_LIMIT_REFILL_PER_SECOND: "10",
       SQS_MAX_MESSAGE_BYTES: "262144" };
     children.push({ role: "api", child: startProcess("packages/api/src/index.ts", env, `load-${runId}-api`) });
     await waitFor(async () => { assertProcesses(); return health(config.apiPort); }, "load API startup", 15000);
@@ -223,6 +242,31 @@ No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Report
     locked = false;
     publicationStarted = true;
     children.push({ role: "publisher", child: startProcess("packages/worker/src/outbox-poller.ts", env, `load-${runId}-publisher`) });
+    if (preload) {
+      startedAt = preloadStartedAt = Date.now();
+      let next = 0;
+      await Promise.all(Array.from({ length: config.concurrency }, async () => {
+        while (next < preloadRequests) {
+          assertProcesses();
+          const sequence = next++;
+          await submit(sequence, Date.now());
+        }
+      }));
+      preloadFinishedAt = Date.now();
+      if (requests.length !== preloadRequests || requests.some(request => request.status !== 201 || !request.eventId || request.error)) throw new Error("Every preload request must be accepted");
+      await waitFor(async () => {
+        assertProcesses();
+        const published = await db.outbox.count({ where: { published: true, event: { tenantId: tenants[0]!.id } } });
+        const depth = await queueDepth();
+        if (published !== preloadRequests || depth.visible < preloadRequests || depth.inFlight || depth.delayed) return false;
+        limits.preload = { expected: preloadRequests, published, ...depth, receiptsBeforeStart: receipts.size };
+        return true;
+      }, "all preload events published and visible before worker startup", 180000);
+      if (receipts.size) throw new Error("A consumer delivered before controlled worker start");
+      await Bun.write(`${base}-preload.json`, JSON.stringify({ evidence: limits.preload, confirmedAt: Date.now(), preloadStartedAt, preloadFinishedAt }, null, 2));
+      console.log(`Confirmed ${preloadRequests} accepted, published, visible messages before worker start.`);
+    }
+    workerStartedAt = Date.now();
     children.push({ role: "worker", child: startProcess("packages/worker/src/index.ts", env, `load-${runId}-worker`) });
     await waitFor(async () => {
       assertProcesses();
@@ -238,7 +282,23 @@ No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Report
         catch (error) { telemetryErrors.push(error instanceof Error ? error.message : String(error)); }
       }
     })();
-    startedAt = Date.now();
+    startedAt ||= Date.now();
+    if (preload) {
+      let quietPlanned = 0;
+      const quietStartedAt = Date.now();
+      const deadline = quietStartedAt + config.drainSeconds * 1000;
+      while ((busyPending() > 0 || quietPlanned < 3) && Date.now() < deadline) {
+        assertProcesses();
+        const sequence = preloadRequests + quietPlanned;
+        planned++;
+        await submit(sequence, quietStartedAt + quietPlanned * 1000);
+        quietPlanned++;
+        await Bun.sleep(Math.max(0, quietStartedAt + quietPlanned * 1000 - Date.now()));
+      }
+      limits.planned = planned;
+      limits.fairness!.quietRequestsPerTenant = quietPlanned;
+      if (busyPending()) throw new Error("Preloaded work did not finish within the declared deadline");
+    } else {
     const start = performance.now();
     const pending = new Set<Promise<void>>();
     for (let sequence = 0; sequence < planned; sequence++) {
@@ -255,6 +315,7 @@ No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Report
     }
     await Promise.all(pending);
     await Bun.sleep(Math.max(0, start + config.durationSeconds * 1000 - performance.now()));
+    }
     submissionsFinishedAt = Date.now();
     await Bun.write(`${base}-requests.json`, JSON.stringify(requests, null, 2));
     console.log(`Submissions finished: ${requests.filter(request => request.status === 201).length} accepted. Waiting for durable outcomes and queue drain.`);
@@ -323,7 +384,7 @@ No queue purge or S3 fixture uploads. Failed runs preserve accepted work. Report
     await Promise.all([receiver?.stop(true), db.$disconnect(), lock.$disconnect()]);
     process.removeListener("SIGINT", interrupted);
     process.removeListener("SIGTERM", interrupted);
-    const report = { runId, prefix, config, startedAt, submissionsFinishedAt, durableCompleteAt, drainedAt,
+    const report = { runId, prefix, config, preloadEvidence: limits.preload, preloadStartedAt, preloadFinishedAt, workerStartedAt, startedAt, submissionsFinishedAt, durableCompleteAt, drainedAt,
       finishedAt: Date.now(), passed: !failure && outcome?.passed === true, failure: failure instanceof Error ? failure.message : failure ? String(failure) : null,
       summary: outcome ?? loadReport(requests, receipts, outcomes, limits), signaturesRejected, unexpected,
       completionDrainMs: durableCompleteAt && submissionsFinishedAt ? durableCompleteAt - submissionsFinishedAt : null,

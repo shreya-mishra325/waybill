@@ -38,7 +38,10 @@
     "test:monitoring:flow": "bun run packages/shared/scripts/test-monitoring-flow.ts",
     "test:monitoring:overhead": "bun run packages/shared/scripts/benchmark-monitoring.ts",
     "test:load": "bun run packages/shared/scripts/test-load.ts",
-    "test:load:pressure": "bun run packages/shared/scripts/test-load.ts --pressure"
+    "test:load:pressure": "bun run packages/shared/scripts/test-load.ts --pressure",
+    "test:load:preload": "bun run packages/shared/scripts/test-load.ts --preload",
+    "test:recovery": "bun run packages/shared/scripts/test-recovery.ts",
+    "grant:tenant": "bun run packages/shared/scripts/grant-tenant.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.4"
