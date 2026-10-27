@@ -49,7 +49,7 @@ async function waitFor(check: () => Promise<boolean>, timeout = 60000) {
 }
 function start(path: string, targetUrl: string) {
   const child = Bun.spawn([process.execPath, "run", path], {cwd: root,
-    env: {...process.env, API_PORT: String(port), RECEIVER_URL: targetUrl},
+    env: {...process.env, API_AUTH_MODE: "development", API_PORT: String(port), RECEIVER_URL: targetUrl},
     stdout: Bun.file(resolve(root, `logs/replay-${runId}-${children.length}.log`)),
     stderr: Bun.file(resolve(root, `logs/replay-${runId}-${children.length}.error.log`)),
   });

@@ -8,6 +8,13 @@ import { deliveryHistoryRouter } from "./routes/delivery-history";
 
 import { deadLettersRouter } from "./routes/dead-letters";
 
+import { authConfig } from "./services/auth-config";
+import { createAuthService } from "./services/auth";
+import { createAuthRouter } from "./routes/auth";
+import { authCors, installTenantAuthorization } from "./middleware/auth";
+
+const authentication = createAuthService(authConfig());
+if (authentication.config.mode === "development") console.warn("API authentication bypass is enabled for local development");
 const app = express();
 const metricsOptions = metricsServerOptions(process.env, 9100);
 if (metricsOptions) {
@@ -21,12 +28,18 @@ if (metricsOptions) {
   }
 }
 app.use(express.json({ limit: "2mb" }));
-app.use(pinoHttp());
+app.use(pinoHttp({ serializers: {
+  req(req) { return { id: req.id, method: req.method, url: typeof req.url === "string" ? req.url.split("?")[0] : undefined }; },
+  res(res) { return { statusCode: res.statusCode }; },
+} }));
+app.use(authCors(authentication));
+app.use("/auth", createAuthRouter(authentication));
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+installTenantAuthorization(app, authentication);
 app.use(eventsRouter);
 app.use(deliveryHistoryRouter);
 app.use(deadLettersRouter);

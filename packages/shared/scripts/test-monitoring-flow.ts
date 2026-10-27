@@ -36,7 +36,7 @@ async function queueEmpty() {
   return response.Attributes !== undefined && Object.keys(response.Attributes).length === 3 && Object.values(response.Attributes).every(value => value === "0");
 }
 function start(path: string) {
-  const child = startProcess(path, { API_PORT: String(apiPort), RECEIVER_URL: targetUrl, METRICS_ENABLED: "true",
+  const child = startProcess(path, { API_AUTH_MODE: "development", API_PORT: String(apiPort), RECEIVER_URL: targetUrl, METRICS_ENABLED: "true",
     API_METRICS_PORT: "9100", PUBLISHER_METRICS_PORT: "9101", WORKER_METRICS_PORT: "9102", METRICS_HOST: "127.0.0.1",
     INGESTION_RATE_LIMIT_CAPACITY: "2", INGESTION_RATE_LIMIT_REFILL_PER_SECOND: "1",
     DELIVERY_RATE_LIMIT_CAPACITY: "1", DELIVERY_RATE_LIMIT_REFILL_PER_SECOND: "0.5", MAX_DELIVERY_ATTEMPTS: "3" }, `monitoring-flow-${runId}-${children.length}`);

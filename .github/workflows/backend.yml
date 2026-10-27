@@ -21,6 +21,7 @@ env:
   RUN_REPLICA_TESTS: "0"
   RUN_REPLAY_TESTS: "0"
   RUN_ARCHIVE_TESTS: "0"
+  RUN_AUTH_TESTS: "0"
   AWS_EC2_METADATA_DISABLED: "true"
 
 jobs:
@@ -78,6 +79,10 @@ jobs:
         run: bun test packages/api/src/repositories/replays.test.ts
         env:
           RUN_REPLAY_TESTS: "1"
+      - name: Authentication persistence and access revocation
+        run: bun test packages/api/src/repositories/auth.test.ts
+        env:
+          RUN_AUTH_TESTS: "1"
       - name: Database diagnostics
         if: failure()
         run: docker compose -f docker-compose.yml -f docker-compose.replica.yml logs --no-color --tail=100 postgres postgres-replica

@@ -17,6 +17,7 @@ model Tenant {
   events      Event[]
   deliveries  Delivery[]
   replays     Replay[]
+  memberships TenantMembership[]
 
   @@map("tenants")
 }
@@ -114,4 +115,50 @@ model Replay {
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId, createdAt])
   @@map("replays")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  githubId    String   @unique @map("github_id")
+  githubLogin String   @map("github_login")
+  createdAt   DateTime @default(now()) @map("created_at")
+  sessions    AuthSession[]
+  memberships TenantMembership[]
+
+  @@map("users")
+}
+
+model TenantMembership {
+  userId    String   @map("user_id")
+  tenantId  String   @map("tenant_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tenantId])
+  @@index([tenantId])
+  @@map("tenant_memberships")
+}
+
+model AuthSession {
+  tokenHash String   @id @map("token_hash")
+  userId    String   @map("user_id")
+  csrfToken String   @map("csrf_token")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([userId])
+  @@map("auth_sessions")
+}
+
+model OAuthLogin {
+  stateHash    String   @id @map("state_hash")
+  browserHash  String   @map("browser_hash")
+  codeVerifier String   @map("code_verifier")
+  expiresAt    DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("oauth_logins")
 }

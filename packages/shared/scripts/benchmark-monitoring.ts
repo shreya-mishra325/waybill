@@ -48,7 +48,7 @@ try {
   console.log("API concurrency 4; webhook concurrency 1; metrics-on trials include two explicit scrapes. No SQS or S3 calls.");
 
   for (const [trial, enabled] of order.entries()) {
-    active = startProcess("packages/api/src/index.ts", { API_PORT: "3109", METRICS_ENABLED: String(enabled), API_METRICS_PORT: "19100", METRICS_HOST: "127.0.0.1",
+    active = startProcess("packages/api/src/index.ts", { API_AUTH_MODE: "development", API_PORT: "3109", METRICS_ENABLED: String(enabled), API_METRICS_PORT: "19100", METRICS_HOST: "127.0.0.1",
       INGESTION_RATE_LIMIT_CAPACITY: "100000", INGESTION_RATE_LIMIT_REFILL_PER_SECOND: "100000" }, `overhead-${runId}-api-${trial}`);
     const child = active;
     await waitFor(async () => {
