@@ -13,7 +13,7 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
     echo "Replica directory is not empty; inspect it before retrying initialization." >&2
     exit 1
   fi
-  pg_basebackup -h postgres -U waybill_replication -D "$PGDATA" -R -X stream --checkpoint=fast --no-password
+  pg_basebackup -h postgres -U waybill_replication -D "$PGDATA" -R -X stream --slot=waybill_local_replica --checkpoint=fast --no-password
 fi
 
 if [ ! -f "$PGDATA/standby.signal" ]; then
@@ -21,4 +21,4 @@ if [ ! -f "$PGDATA/standby.signal" ]; then
   exit 1
 fi
 
-exec postgres -D "$PGDATA" -c hot_standby=on
+exec postgres -D "$PGDATA" -c hot_standby=on -c primary_slot_name=waybill_local_replica
