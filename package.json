@@ -41,7 +41,8 @@
     "test:load:pressure": "bun run packages/shared/scripts/test-load.ts --pressure",
     "test:load:preload": "bun run packages/shared/scripts/test-load.ts --preload",
     "test:recovery": "bun run packages/shared/scripts/test-recovery.ts",
-    "grant:tenant": "bun run packages/shared/scripts/grant-tenant.ts"
+    "grant:tenant": "bun run packages/shared/scripts/grant-tenant.ts",
+    "test:auth:flow": "bun run packages/shared/scripts/test-authenticated-flow.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

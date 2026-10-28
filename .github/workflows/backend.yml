@@ -80,7 +80,7 @@ jobs:
         env:
           RUN_REPLAY_TESTS: "1"
       - name: Authentication persistence and access revocation
-        run: bun test packages/api/src/repositories/auth.test.ts
+        run: bun test packages/api/src/repositories/auth.test.ts packages/api/src/repositories/api-keys.test.ts
         env:
           RUN_AUTH_TESTS: "1"
       - name: Database diagnostics
