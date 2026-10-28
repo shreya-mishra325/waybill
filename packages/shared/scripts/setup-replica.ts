@@ -41,6 +41,9 @@ DO $$ BEGIN
   IF to_regclass('public.auth_sessions') IS NOT NULL THEN
     REVOKE ALL ON users, tenant_memberships, auth_sessions, oauth_logins FROM waybill_reader;
   END IF;
+  IF to_regclass('public.api_keys') IS NOT NULL THEN
+    REVOKE ALL ON api_keys FROM waybill_reader;
+  END IF;
 END $$;
 COMMIT;
 `);

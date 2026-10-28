@@ -13,8 +13,12 @@ import { createAuthService } from "./services/auth";
 import { createAuthRouter } from "./routes/auth";
 import { authCors, installTenantAuthorization } from "./middleware/auth";
 
+import { createApiKeyService } from "./services/api-keys";
+import { createApiKeysRouter } from "./routes/api-keys";
+
 const authentication = createAuthService(authConfig());
 if (authentication.config.mode === "development") console.warn("API authentication bypass is enabled for local development");
+const apiKeys = createApiKeyService(authentication);
 const app = express();
 const metricsOptions = metricsServerOptions(process.env, 9100);
 if (metricsOptions) {
@@ -39,7 +43,8 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-installTenantAuthorization(app, authentication);
+installTenantAuthorization(app, authentication, apiKeys);
+app.use(createApiKeysRouter(apiKeys));
 app.use(eventsRouter);
 app.use(deliveryHistoryRouter);
 app.use(deadLettersRouter);
