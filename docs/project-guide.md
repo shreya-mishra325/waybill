@@ -256,10 +256,11 @@ Prometheus and Grafana are now scoped in Phase 8. The remaining goals are separa
 - [x] Require primary-backed tenant membership for ingestion, delivery history, summary, archived payload reads, and replay in session mode. Keep delivery reads on the replica and deny its reader access to authentication tables.
 - [x] Add an explicit local command to grant or revoke an existing user's tenant membership; never auto-assign existing tenants at signup.
 - [x] Verify mocked provider flows, HTTP guards, real session persistence, concurrent state consumption, and access revocation. Apply the additive local migration.
-- [ ] Configure the GitHub OAuth app and verify a real browser sign-in, tenant grant, authorized read/write, and logout.
-- [ ] Add machine-to-machine ingestion credentials before exposing integration clients; this checkpoint supports cookie sessions only.
+- [x] Configure GitHub OAuth and verify real browser sign-in, explicit `dev-tenant` access, identity, replica-backed summary reads, and CSRF-authenticated logout. Browser verification completed on 2026-10-27.
+- [x] Add tenant-bound, ingestion-only API keys with hashed storage, one-time disclosure, bounded expiry, primary-backed validation, paginated metadata, and revocation. Removing the creator's membership disables its keys.
+- [x] Verify authenticated ingestion and idempotent replay through real SQS and signed delivery using a temporary session and keys. The 2026-10-28 run reached three successful outcomes and one intentional dead letter, then drained and cleaned up.
 
-See [authentication setup and contract](./AUTHENTICATION.md). The local environment remains in development bypass mode until OAuth credentials are configured. Production rejects that bypass. GitHub authentication is implemented and locally tested, but the real-provider checkpoint is still open.
+See [authentication setup and contract](./AUTHENTICATION.md). The local environment uses session mode. Real GitHub sign-in and browser logout are verified, and both cookie and application-key writes passed the authenticated pipeline check. Production rejects the development bypass. Remaining work is frontend integration and release hardening.
 
 ### Final tenant dashboard integration
 
@@ -269,8 +270,8 @@ Start after the required backend metrics, load-test, and hardening checkpoints. 
 - [ ] Add replay controls that reuse an idempotency key while a request is pending and link the resulting new event to its original failure.
 - [ ] Show loading, empty, error, and replica-lag states; distinguish accepted replay commands from completed delivery.
 - [ ] Verify the full UI flow: inspect a failed delivery, open its payload, replay it, and follow the new delivery outcome while preserving the original failure.
-- [ ] Enable and verify GitHub session authentication and tenant membership end to end before exposing the dashboard APIs publicly. The backend checks are implemented; OAuth configuration and dashboard integration remain pending.
-- [ ] Verify the dashboard against the final API responses, replica behavior, and replay semantics.
+- [ ] Connect the dashboard to the verified GitHub session, tenant-membership, CSRF, and ingestion-key contracts. Verify its own end-to-end sign-in, reads, replay, key management, and logout before public exposure.
+- [ ] Verify the dashboard against the final API responses, replica behavior, and replay semantics. Update public integration examples and documentation to distinguish development bypass, browser sessions, and server-side ingestion keys.
 
 ---
 
