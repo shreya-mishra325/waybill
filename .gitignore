@@ -46,5 +46,17 @@ out/
 /docs/ANIMATION_SPEC.md
 /docs/CODEX_VISUAL_QA.md
 /docs/design-references/
+/docs/authenticated-design/
+/docs/design.md
 /docs/codex/
 /waybill_public_site_final_markdown_kit/
+
+# local workspace instructions and configuration
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+GEMINI.md
+.agents/
+.codex/
+.claude/
+.gemini/
