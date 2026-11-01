@@ -36,6 +36,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--wb-ink-on-dark)
 .hero-content { position: relative; padding-top: 180px; }
 h1 { margin: 0; font-family: var(--font-editorial), Georgia, "Times New Roman", serif; font-size: var(--wb-heading-size); font-weight: 400; line-height: var(--wb-heading-leading); letter-spacing: var(--wb-heading-tracking); }
 .hero h1 { font-synthesis: none; }
+.hero-word { font-family: var(--font-webhooks), Georgia, "Times New Roman", serif; }
 .hero h1 > span + span { font-size: 0.92em; }
 h1 span { display: block; white-space: nowrap; }
 h1 em { color: var(--wb-accent); font-style: normal; }

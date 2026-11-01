@@ -13,11 +13,11 @@ const labels: {text: string; x: number; y: number; width: number; icon?: IconNam
   {text: "Dead letter", x: 1300, y: 600, width: 180, icon: "archive", dark: true},
 ];
 type Occlusion = { x: number; y: number; width: number; height: number };
-type NetworkNode = { route: number; point: Sample; accent: boolean; phase: number };
+type NetworkNode = { route: number; point: Sample; pulse?: "orange" | "cream"; phase: number };
 type NetworkPacket = { route: number; distance: number; speed: number };
 type Scene = { routes: MeasuredRoute[]; nodes: NetworkNode[]; packets: NetworkPacket[]; flight: MeasuredRoute; flightStops: {scroll: number; distance: number}[] };
 type View = {layout: NetworkLayout; height: number};
-const protectedText = ".site-header, .hero-content, .highlights, .product-copy, .product-preview figcaption, .how-copy, .architecture-tabs, .architecture-detail, .architecture-support, .architecture-figure figcaption, .features-heading, .developer-copy, .integration-example figcaption, .integration-copy-status, .docs-intro";
+const protectedText = ".site-header, .hero-content, .highlights, .product-copy, .product-preview figcaption, .how-copy, .architecture-tabs, .architecture-detail, .architecture-support, .architecture-figure figcaption, .data-flow-summary, .data-flow-step strong, .data-flow-protocol, .data-flow-diagram figcaption, .data-flow-detail, .features-heading, .developer-copy, .integration-example figcaption, .integration-copy-status, .docs-intro";
 
 function measurePath(path: SVGPathElement): MeasuredRoute {
   const length = path.getTotalLength();
@@ -34,6 +34,7 @@ export function LandingNetwork() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const ambientCanvas = useRef<HTMLCanvasElement>(null);
   const pulseSprite = useRef<HTMLCanvasElement | null>(null);
+  const creamPulseSprite = useRef<HTMLCanvasElement | null>(null);
   const elapsed = useRef(0);
   const [view, setView] = useState<View>(() => ({layout: networkLayout(1536, 900), height: 1024}));
   const {layout} = view;
@@ -101,9 +102,28 @@ export function LandingNetwork() {
       distances.forEach((distance, index) => {
         const point = sampleRoute(route, distance);
         const mobileAccent = compact && index < 7 && index % 2 === 1 && point.x > layout.left + 20 && point.x < layout.left + layout.width / layout.scale - 20;
-        nodes.push({route: routeIndex, point, accent: (index + routeIndex) % 4 === 0 || mobileAccent, phase: (index * 0.29 + routeIndex * 0.17) % 1});
+        const pulsing = (index + routeIndex) % 4 === 0 || mobileAccent;
+        const pulse = pulsing ? "orange" : index >= 7 && (index + routeIndex) % 9 === 2 ? "cream" : undefined;
+        nodes.push({route: routeIndex, point, pulse, phase: (index * 0.29 + routeIndex * 0.17) % 1});
       });
     });
+    const referenceScale = 1536 / 927;
+    const whiteHighlight = {x: 347 * referenceScale, y: 133 * referenceScale};
+    let closest: {route: number; point: Sample; distance: number} | undefined;
+    measured.forEach((route, routeIndex) => {
+      if (compact && (routeIndex === 1 || routeIndex === 4)) return;
+      for (let index = 0; index < route.points.length && index * route.spacing <= heroLengths[routeIndex]!; index++) {
+        const point = route.points[index]!;
+        const distance = Math.hypot(point.x - whiteHighlight.x, point.y - whiteHighlight.y);
+        if (!closest || distance < closest.distance) closest = {route: routeIndex, point, distance};
+      }
+    });
+    if (closest) {
+      const highlight = closest as {route: number; point: Sample; distance: number};
+      const existing = nodes.find(node => node.route === highlight.route && Math.hypot(node.point.x - highlight.point.x, node.point.y - highlight.point.y) < 24);
+      if (existing) { existing.point = highlight.point; existing.pulse = "cream"; }
+      else nodes.push({route: highlight.route, point: highlight.point, pulse: "cream", phase: 0.37});
+    }
     const packets: NetworkPacket[] = [];
     (compact ? [0, 2] : [0, 1, 5]).forEach((route, index) => {
       const gap = compact ? 1000 : 2200;
@@ -151,6 +171,27 @@ export function LandingNetwork() {
     root.dataset.nodes = String(scene.nodes.length);
     root.dataset.packets = String(scene.packets.length);
     const pulseSize = 60;
+    root.dataset.creamPulses = String(scene.nodes.filter(node => node.pulse === "cream").length);
+    root.dataset.orangePulses = String(scene.nodes.filter(node => node.pulse === "orange").length);
+    if (creamPulseSprite.current?.width !== 48) {
+      const sprite = document.createElement("canvas");
+      sprite.width = 48;
+      sprite.height = 48;
+      const paint = sprite.getContext("2d");
+      if (paint) {
+        paint.fillStyle = routeColor;
+        paint.globalAlpha = 0.08;
+        paint.beginPath();
+        paint.arc(24, 24, 24, 0, Math.PI * 2);
+        paint.fill();
+        paint.globalAlpha = 1;
+        paint.fillStyle = dotColor;
+        paint.beginPath();
+        paint.arc(24, 24, 6.6, 0, Math.PI * 2);
+        paint.fill();
+        creamPulseSprite.current = sprite;
+      }
+    }
     const pulseImage = new Image();
     pulseImage.onload = () => {
       const sprite = document.createElement("canvas");
@@ -242,20 +283,23 @@ export function LandingNetwork() {
         const x = point.x + offset.x;
         const y = point.y + offset.y;
         const nearby = animated && finePointer.matches ? Math.max(0, 1 - Math.hypot(point.x - cursor.x, point.y - cursor.y) / 170) : 0;
-        if (node.accent) {
+        if (node.pulse) {
+          const cream = node.pulse === "cream";
           const phase = (seconds / MOTION.radiateSeconds + node.phase) % 1;
           if (animated && phase < 0.62) {
             const progress = phase / 0.62;
             const eased = 1 - (1 - progress) ** 2;
-            circle(x, y, 10 + eased * 25, "#83b5bc", (1 - progress) ** 1.8 * 0.26, true);
+            circle(x, y, cream ? 3.3 + eased * 10 : 10 + eased * 25, cream ? routeColor : "#83b5bc", (1 - progress) ** 1.8 * (cream ? 0.16 : 0.26), true);
           }
-          if (pulseSprite.current) {
+          const sprite = cream ? creamPulseSprite.current : pulseSprite.current;
+          if (sprite) {
             context!.globalAlpha = 0.96 + nearby * 0.04;
-            context!.drawImage(pulseSprite.current, x - pulseSize / 2, y - pulseSize / 2, pulseSize, pulseSize);
+            const size = cream ? 24 : pulseSize;
+            context!.drawImage(sprite, x - size / 2, y - size / 2, size, size);
           } else {
-            circle(x, y, 30, "#83b5bc", 0.1);
-            circle(x, y, 10, accentColor, 1);
-            circle(x, y, 5, "#fffcf5", 1);
+            circle(x, y, cream ? 12 : 30, cream ? routeColor : "#83b5bc", cream ? 0.08 : 0.1);
+            circle(x, y, cream ? 3.3 : 10, cream ? dotColor : accentColor, 1);
+            if (!cream) circle(x, y, 5, "#fffcf5", 1);
           }
         } else circle(x, y, 2.5, dotColor, 0.78);
       }

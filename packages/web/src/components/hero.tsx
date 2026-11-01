@@ -10,7 +10,7 @@ const highlights: {icon: IconName; first: string; second: string}[] = [
 export function Hero() {
   return <section className="hero" aria-labelledby="hero-title">
     <div className="site-container hero-content">
-      <h1 id="hero-title"><span>Webhooks,</span><span>that actually <em>arrive.</em></span></h1>
+      <h1 id="hero-title"><span className="hero-word">Webhooks,</span><span>that actually <em>arrive.</em></span></h1>
       <p className="hero-description">Track, inspect and recover webhook deliveries<br className="desktop-break"/> without the guesswork.</p>
       <div className="hero-actions flex flex-wrap items-center">
         <a className="button button-primary" href="https://github.com/shreya-mishra325/waybill#quick-start">Get started <Icon name="arrow"/></a>

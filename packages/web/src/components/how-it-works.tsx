@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent } from "react";
-import { DATA_FLOW, DELIVERY_GUARANTEES } from "../lib/architecture";
+import { DELIVERY_GUARANTEES } from "../lib/architecture";
 import { ArchitectureDiagram } from "./architecture-diagram";
+import { DataFlowDiagram } from "./data-flow-diagram";
 
 const tabs = [
   { id: "architecture", label: "Architecture" },
@@ -42,7 +43,7 @@ export function HowItWorks() {
           <ArchitectureDiagram/>
         </div>
         <div className="architecture-panel" id="how-panel-data-flow" role="tabpanel" aria-labelledby="how-tab-data-flow" hidden={active !== "data-flow"} tabIndex={0}>
-          <ol className="architecture-flow">{DATA_FLOW.map((step, index) => <li key={step.title}><span className="architecture-step-number" aria-hidden="true">0{index + 1}</span><div><h3>{step.title}</h3><p>{step.text}</p></div></li>)}</ol>
+          <DataFlowDiagram/>
         </div>
         <div className="architecture-panel" id="how-panel-guarantees" role="tabpanel" aria-labelledby="how-tab-guarantees" hidden={active !== "guarantees"} tabIndex={0}>
           <ul className="architecture-guarantees">{DELIVERY_GUARANTEES.map(item => <li key={item.title}><h3>{item.title}</h3><p>{item.text}</p></li>)}</ul>

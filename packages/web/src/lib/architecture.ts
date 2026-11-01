@@ -13,11 +13,11 @@ export const ARCHITECTURE_NODES = [
 export type ArchitectureNodeId = typeof ARCHITECTURE_NODES[number]["id"];
 
 export const DATA_FLOW = [
-  { title: "Accept the event", text: "POST /events validates the tenant and payload, applies the ingestion limit and uploads oversized payloads to S3." },
-  { title: "Commit event + outbox", text: "PostgreSQL saves both records atomically. The API response confirms persistence, not delivery to the destination." },
-  { title: "Publish through the poller", text: "The advisory-lock leader sends pending outbox entries to SQS, then marks confirmed sends as published. Failed publications remain pending." },
-  { title: "Attempt delivery", text: "Workers receive queue messages, apply delivery limits and circuit breakers, and POST the HMAC-signed envelope to the configured receiver URL." },
-  { title: "Record the outcome", text: "Success is saved before queue deletion. Failures defer the same message with backoff; exhausted attempts are archived in S3 and recorded as dead letters." },
+  { id: "accept", icon: "code", protocol: "POST /events", title: "Accept the event", text: "POST /events validates the tenant and payload, applies the ingestion limit and uploads oversized payloads to S3." },
+  { id: "commit", icon: "database", protocol: "PostgreSQL", title: "Commit event + outbox", text: "PostgreSQL saves both records atomically. The API response confirms persistence, not delivery to the destination." },
+  { id: "publish", icon: "arrow", protocol: "SQS publication", title: "Publish through the poller", text: "The advisory-lock leader sends pending outbox entries to SQS, then marks confirmed sends as published. Failed publications remain pending." },
+  { id: "deliver", icon: "worker", protocol: "HMAC-SHA256", title: "Attempt delivery", text: "Workers receive queue messages, apply delivery limits and circuit breakers, and POST the HMAC-signed envelope to the configured receiver URL." },
+  { id: "outcome", icon: "activity", protocol: "Delivery status", title: "Record the outcome", text: "Success is saved before queue deletion. Failures defer the same message with backoff; exhausted attempts are archived in S3 and recorded as dead letters." },
 ] as const;
 
 export const DELIVERY_GUARANTEES = [
