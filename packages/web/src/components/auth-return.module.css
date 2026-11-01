@@ -1,0 +1,3 @@
+.notice { position: fixed; z-index: 30; right: 24px; bottom: 24px; width: min(380px, calc(100% - 48px)); padding: 18px 22px; border: 1px solid var(--wb-border-light); border-radius: 8px; color: var(--wb-ink-on-light); background: var(--wb-surface); box-shadow: 0 8px 30px #09283622; font-size: 14px; line-height: 1.6; }
+.notice p { margin: 0 0 8px; }
+.notice a { color: var(--wb-accent-on-light); text-decoration: underline; text-underline-offset: 3px; }

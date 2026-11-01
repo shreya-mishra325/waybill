@@ -1,46 +1,44 @@
-# Waybill public website
+# Waybill web
 
-Phases 1-3: design foundation, animated hero, and Product section. Architecture, features, public docs, authentication, and the private dashboard are not implemented in this package.
+Next.js App Router frontend for the public website, documentation, and authenticated application. The Express/Bun API remains a separate service. This package does not access the database or duplicate backend logic.
 
 ## Local development
 
-From the repository root:
+From the repository root, with dependencies installed:
 
 ```bash
-bun install
+bun run dev:api
+```
+
+In a second terminal:
+
+```bash
 bun run dev:web
 ```
 
-Open `http://127.0.0.1:3001`. Express retains its separate API process and port. This package has no route handlers, database clients, AWS clients, or copied backend logic.
+Open `http://127.0.0.1:3001` for the public website, `/docs` for documentation, or `/app` to sign in and select a workspace. The API defaults to `http://127.0.0.1:3000` during frontend development.
+
+Authenticated pages require the existing session-auth configuration, GitHub OAuth credentials, database services, and tenant membership. See [Authentication](../../docs/AUTHENTICATION.md). The server reads `AUTH_API_ORIGIN`; production requires this variable at runtime. It must match the API origin and the backend must allow the frontend origin. Do not expose OAuth secrets through frontend environment variables.
+
+## Authenticated application
+
+`/app` handles sign-in and workspace selection. `/app/<tenantId>` displays the Overview using the existing tenant summary and delivery-history endpoints. Workspace selection is checked against the current session memberships. Only the selected workspace UUID is stored locally; credentials and CSRF tokens are not persisted there.
+
+Overview includes status totals, the latest five deliveries, delivery outcomes, and loading, empty, expired-session, and request-error states. Its success rate uses completed deliveries, matching the backend contract. Future page links and delivery-detail actions remain disabled until those pages are implemented.
+
+Shared application components live in `src/components/dashboard`, API response validation and formatting in `src/lib/dashboard-*`, and scoped styles in `src/app/app/dashboard.css`.
+
+## Checks and production
 
 ```bash
 bun run check:web
+bun test packages/web/tests
 bun run build:web
 bun run --cwd packages/web start
 ```
 
-Add `?motion=off` for a deterministic static animation frame. The operating system's reduced-motion setting also disables motion. No database, Redis, or AWS configuration is needed to render the hero.
+Provide `AUTH_API_ORIGIN` to the production server. Authenticated routes render at request time; public pages and documentation retain their existing rendering behavior.
 
-## Structure
+## Typography and motion
 
-- `src/app/tokens.css`: centralized palette, heading size, line height, and tracking, exposed to Tailwind v4.
-- `src/app/layout.tsx`: Next App Router shell and self-hosted Google Fonts via `next/font`.
-- `src/components/site-header.tsx`: supplied logo, responsive navigation, and honest notices for future pages.
-- `src/components/hero.tsx`: heading, copy, actions, and four highlights.
-- `src/components/product.tsx`, `product-preview.tsx`, `src/app/product.css`: Product layout, background continuation, and labelled example delivery viewer with working local filters.
-- `src/components/hero-network.tsx`: SVG paths, nodes, packets, airplane, and one animation scheduler.
-- `src/lib/network.ts`: path definitions, motion timing, and interpolation.
-
-Motion for React provides restrained scroll parallax for the decorative layer. The SVG animation uses cached path samples and direct transform/opacity updates, without React renders on every frame. It stops when the document is hidden, outside the viewport, reduced motion is enabled, or motion is explicitly off. Cleanup cancels the frame and removes observers/listeners. Small screens simplify the network and reposition the flight zone below the actions.
-
-## Typography
-
-The screenshot does not identify an exact font. The selected approximation is **Libre Caslon Display**, regular 400, from [Google Fonts](https://fonts.google.com/specimen/Libre+Caslon+Display), with Georgia and Times New Roman fallbacks. UI text uses **DM Sans**, from [Google Fonts](https://fonts.google.com/specimen/DM+Sans), with Arial fallback. `next/font` self-hosts these in generated build output; no third-party font binaries are committed.
-
-Desktop heading: `clamp(76px, 7.4vw, 114px)`, line height `0.95`, tracking `-0.042em`. Tablet: 86 px. Mobile: `clamp(45px, 8.6vw, 65px)`, line height `1.05`, tracking `-0.04em`. Compare rendered glyphs, not font names. Review future family changes against the approved serif reference.
-
-## Scope of links
-
-Get started opens the repository's actual local setup. View on GitHub opens the actual repository. Product scrolls to `/#product`. Explore product opens the repository architecture document until the on-page How It Works section is implemented. Features, Docs, and Sign in currently open labelled preview notices with a real repository link. The Product viewer is illustrative, uses supported delivery fields and states, and does not load private records or simulate authentication. Future sections are not rendered. `/docs` is not implemented yet.
-
-Visual evidence and remaining differences are recorded in `docs/PUBLIC_HERO_REVIEW.md`.
+Rosarivo is used for the public hero’s “Webhooks” line, Rufina for serif headings, and DM Sans for interface text. Fonts are self-hosted through `next/font`. The public network animation and authenticated artwork respect reduced-motion preferences. Add `?motion=off` to disable the public network animation explicitly.
