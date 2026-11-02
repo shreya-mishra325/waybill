@@ -18,14 +18,17 @@ export function normalizeApiOrigin(value: string) {
   }
   return url.origin;
 }
-export async function requestDashboardApi(origin: string, path: string, options: { method?: "GET" | "POST"; csrfToken?: string; signal?: AbortSignal } = {}): Promise<unknown> {
+export async function requestDashboardApi(origin: string, path: string, options: { method?: "GET" | "POST"; csrfToken?: string; idempotencyKey?: string; body?: Record<string, unknown>; signal?: AbortSignal } = {}): Promise<unknown> {
   if (!path.startsWith("/") || path.startsWith("//")) throw new Error("API requests require a relative path");
   const method = options.method ?? "GET";
   if (method === "POST" && !options.csrfToken) throw new DashboardApiError(403, messages[403]!);
+  if (options.idempotencyKey !== undefined && (method !== "POST" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(options.idempotencyKey))) throw new DashboardApiError(400, "A valid replay idempotency key is required.");
+  if (options.body !== undefined && method !== "POST") throw new DashboardApiError(400, "Request bodies require POST.");
   let response: Response;
   try {
     response = await fetch(normalizeApiOrigin(origin) + path, { method, credentials: "include", cache: "no-store",
-      headers: { Accept: "application/json", ...(options.csrfToken ? { "X-CSRF-Token": options.csrfToken } : {}) },
+      headers: { Accept: "application/json", ...(options.csrfToken ? { "X-CSRF-Token": options.csrfToken } : {}), ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}), ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}) },
+      ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
       signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000) });
     if (!response.ok) { await response.body?.cancel(); throw new DashboardApiError(response.status, messages[response.status] ?? "The request could not be completed. Please try again."); }
     if (response.status === 204) return undefined;
