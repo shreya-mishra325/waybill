@@ -1,0 +1,108 @@
+.dashboard-observability { padding: 16px 26px 28px; }
+.dashboard-observability .dashboard-page-heading { min-height: 104px; margin-bottom: 16px; }
+.dashboard-observability .dashboard-page-heading h1 { font-size: 52px; }
+.dashboard-observability .dashboard-page-heading p { margin-top: 8px; font-size: 18px; }
+.dashboard-observability .obs-heading-copy { max-width: calc(100% - 310px); }
+.dashboard-observability .dashboard-artwork { width: 51%; top: -35px; }
+.dashboard-observability .dashboard-plane { x: 742px; y: 45px; }
+.dashboard-observability .obs-controls { position: absolute; top: 16px; right: 0; z-index: 2; padding: 0 4px 4px; background: var(--dash-bg); }
+.obs-controls > div { display: flex; align-items: center; gap: 10px; }
+.obs-controls select { min-height: 44px; padding: 10px 28px 10px 13px; border: 1px solid var(--dash-border); border-radius: 7px; color: #526d7c; background: #fffefa; font: inherit; font-size: 12px; opacity: 1; cursor: not-allowed; }
+.obs-controls .dashboard-button { min-height: 44px; gap: 8px; padding-inline: 12px; font-size: 12px; }
+.obs-controls .dashboard-button:disabled { opacity: .6; }
+.obs-connection-label { display: block; margin-top: 7px; color: #a45437; font-size: 11px; text-align: right; }
+.obs-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.obs-stat { min-height: 140px; padding: 16px 20px; }
+.obs-stat > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.obs-stat h2 { margin: 0; font-family: var(--font-ui), Arial, sans-serif; font-size: 13px; font-weight: 600; line-height: 1.5; letter-spacing: 0; }
+.obs-stat > header > span { flex: none; padding: 3px 5px; border-radius: 4px; background: #f1f5f5; color: #667e8b; font-size: 9px; white-space: nowrap; }
+.obs-stat > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-top: 19px; }
+.obs-stat strong { font-size: 21px; font-weight: 400; line-height: 1.2; }
+.obs-stat small { color: #708593; font-size: 10px; }
+.obs-stat > p { margin: 5px 0 0; color: #708593; font-size: 11px; }
+.obs-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; align-items: stretch; }
+.obs-chart, .obs-bottom-panel { min-width: 0; }
+.obs-chart { min-height: 326px; padding: 16px 18px 12px; }
+.obs-chart > header, .obs-bottom-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.obs-chart h2, .obs-bottom-panel h2 { font-size: 25px; font-weight: 400; }
+.obs-chart header p, .obs-bottom-panel header p { margin: 4px 0 0; color: #708593; font-size: 12px; }
+.obs-scope { flex: none; padding: 5px 9px; border: 1px solid var(--dash-border); border-radius: 5px; color: #637d8b; background: #fcfdfb; font-size: 10px; white-space: nowrap; }
+.obs-chart-frame { position: relative; height: 190px; margin-top: 20px; }
+.obs-empty-grid { position: absolute; inset: 8px 18px 25px 47px; display: flex; flex-direction: column; justify-content: space-between; border-left: 1px solid #e9ece7; }
+.obs-empty-grid > span { display: block; border-top: 1px solid #eceee9; }
+.obs-y-axis { position: absolute; left: 0; top: 80px; width: 24px; height: 1px; overflow: visible; transform: rotate(-90deg); transform-origin: center; color: #718492; font-size: 10px; white-space: nowrap; }
+.obs-x-axis { position: absolute; bottom: 0; left: 47px; right: 18px; text-align: center; color: #718492; font-size: 10px; }
+.obs-plot-unavailable { position: absolute; inset: 8px 18px 25px 47px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 5px; text-align: center; padding: 12px; }
+.obs-plot-unavailable strong { padding: 4px 8px; background: #fffefaf2; color: #637d8b; font-size: 13px; font-weight: 500; }
+.obs-plot-unavailable > span { padding-inline: 8px; background: #fffefaf2; color: #7c8e98; font-size: 11px; }
+.obs-legend { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 18px; list-style: none; margin: 15px 0 0; padding: 0; color: #617b8a; font-size: 11px; }
+.obs-legend li { display: flex; align-items: center; gap: 6px; }
+.obs-legend i { width: 8px; height: 8px; border-radius: 50%; }
+.obs-bottom-panel { min-height: 252px; padding: 16px 20px; }
+.obs-metric-rows { margin: 12px 0 0; font-size: 13px; }
+.obs-metric-rows > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 8px; border-top: 1px solid var(--dash-border); }
+.obs-metric-rows dt { min-width: 0; }
+.obs-metric-rows dt small { display: block; color: #7e8f99; font-size: 10px; overflow-wrap: anywhere; }
+.obs-metric-rows dd { margin: 0; color: #6d8593; font-size: 11px; }
+.obs-panel-note { margin: 9px 0 0; color: #7d8f98; font-size: 10px; line-height: 1.6; }
+.obs-integration { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; color: #718693; font-size: 11px; }
+.obs-integration > p { max-width: 630px; margin: 0; }
+.obs-integration > div { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px 14px; }
+.obs-grafana-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: #b34b2e; font-weight: 600; }
+.obs-link-unavailable { color: #8a6d5e; }
+.obs-integration > .obs-configuration-error { max-width: 100%; flex-basis: 100%; color: #a45437; }
+@media (min-width: 1001px) and (max-width: 1399px) {
+  .dashboard-observability .obs-controls { right: 130px; }
+}
+@media (min-width: 1400px) {
+  .dashboard-observability .obs-controls { right: 180px; }
+}
+@media (max-width: 1300px) {
+  .obs-stat { padding-inline: 15px; }
+  .obs-stat h2 { font-size: 12px; }
+  .obs-stat > header { gap: 7px; }
+  .obs-stat > header > span { font-size: 8px; }
+  .obs-chart h2, .obs-bottom-panel h2 { font-size: 23px; }
+}
+@media (max-width: 1000px) {
+  .dashboard-observability { padding-top: 30px; }
+  .dashboard-observability .dashboard-page-heading h1 { font-size: 40px; }
+  .dashboard-observability .obs-heading-copy { max-width: 100%; }
+  .dashboard-observability .obs-controls { position: relative; top: auto; right: auto; margin-top: 18px; width: fit-content; }
+  .dashboard-observability .dashboard-artwork { width: 42%; top: -5px; }
+  .obs-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .obs-stat h2 { font-size: 13px; }
+  .obs-stat > header > span { font-size: 10px; }
+  .obs-panels { grid-template-columns: 1fr; row-gap: 14px; }
+  .obs-bottom-panel { min-height: 0; padding-bottom: 18px; }
+  .obs-chart { min-height: 326px; }
+  .obs-chart h2, .obs-bottom-panel h2 { font-size: 25px; }
+}
+@media (max-width: 600px) {
+  .dashboard-observability { padding: 32px 18px 38px; }
+  .dashboard-observability .dashboard-page-heading h1 { font-size: 34px; }
+  .dashboard-observability .dashboard-page-heading p { font-size: 17px; max-width: 100%; }
+  .dashboard-observability .dashboard-artwork { width: 65%; right: 0; top: 8px; }
+  .obs-stats { gap: 12px; }
+  .obs-stat { min-height: 158px; padding: 14px 12px; }
+  .obs-stat > header { flex-wrap: wrap; gap: 4px; }
+  .obs-stat h2 { font-size: 12px; }
+  .obs-stat > header > span { font-size: 9px; }
+  .obs-stat > div { gap: 5px; margin-top: 12px; }
+  .obs-stat strong { font-size: 19px; }
+  .obs-stat small { font-size: 9px; }
+  .obs-chart { padding-inline: 12px; min-height: 326px; }
+  .obs-chart h2, .obs-bottom-panel h2 { font-size: 24px; }
+  .obs-chart > header, .obs-bottom-panel > header { flex-wrap: wrap; gap: 8px; }
+  .obs-chart header p, .obs-bottom-panel header p { font-size: 11px; }
+  .obs-chart-frame { height: 186px; margin-top: 16px; }
+  .obs-plot-unavailable strong { font-size: 12px; }
+  .obs-scope { font-size: 9px; }
+  .obs-bottom-panel { padding-inline: 14px; }
+  .obs-metric-rows { font-size: 12px; }
+  .obs-metric-rows > div { gap: 10px; padding-inline: 2px; }
+  .obs-metric-rows dd { font-size: 10px; }
+  .obs-metric-rows dt small { font-size: 9px; }
+  .obs-integration > div { justify-content: flex-start; }
+  .obs-connection-label { text-align: left; }
+}
