@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "../icon";
+import { usePathname, useRouter } from "next/navigation";
 import { useDashboard } from "./provider";
 import { DashboardGlyph } from "./ui";
 import type { Workspace } from "../../lib/dashboard-types";
@@ -37,12 +38,13 @@ export function WorkspaceMenu({ workspace }: { workspace: Workspace }) {
   </Menu>;
 }
 export function ProfileMenu({ workspace }: { workspace: Workspace | null }) {
+  const router = useRouter(); const pathname = usePathname();
   const { state, switchWorkspace, signOut, signingOut } = useDashboard();
   if (state.status !== "ready") return null;
   const login = state.session.user.githubLogin;
   return <Menu className="dashboard-profile-menu" label={`Account menu for ${login}`} trigger={<span className="dashboard-avatar" aria-hidden="true">{login.slice(0, 1).toUpperCase()}</span>}>
     {close => <><div className="dashboard-profile-identity"><Icon name="github"/><span>{login}</span></div>{workspace && <>
-      <button role="menuitem" type="button" disabled title="Not available yet"><DashboardGlyph name="key"/>API Keys</button>
+      <button role="menuitem" type="button" aria-current={pathname === `/app/${workspace.id}/api-keys` ? "page" : undefined} onClick={() => { close(); router.push(`/app/${workspace.id}/api-keys`); }}><DashboardGlyph name="key"/>API Keys</button>
       <button role="menuitem" type="button" onClick={() => { close(); switchWorkspace(); }}><DashboardGlyph name="workspace"/>Switch workspace</button>
     </>}<button role="menuitem" className="dashboard-signout" type="button" disabled={signingOut} onClick={() => { close(); void signOut(); }}><DashboardGlyph name="logout"/>{signingOut ? "Signing out…" : "Sign out"}</button></>}
   </Menu>;
