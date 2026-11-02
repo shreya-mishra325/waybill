@@ -11,7 +11,7 @@ export function authCors(service: AuthService): RequestHandler {
     if (origin === service.config.webOrigin) {
       res.set({ "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true" });
       if (req.method === "OPTIONS") {
-        res.set({ "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token", "Access-Control-Max-Age": "600" });
+        res.set({ "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token, Idempotency-Key", "Access-Control-Max-Age": "600" });
         res.status(204).end(); return;
       }
     } else if (req.method === "OPTIONS") { res.status(403).end(); return; }
