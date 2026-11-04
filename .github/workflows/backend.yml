@@ -39,6 +39,19 @@ jobs:
       - run: bun run check:backend
       - run: bun run test:backend
 
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - run: bun test packages/web/tests
+      - run: bun run check:web
+      - run: bun run build:web
+
   database:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
