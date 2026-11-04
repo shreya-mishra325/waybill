@@ -39,14 +39,14 @@ test("backlog uses existing fresh-only recording rules, preserving unavailable s
   }
   expect(rules).toContain('up{job="waybill-publisher"} == 1'); expect(rules).toContain("max by (state)");
   const html = renderToStaticMarkup(createElement(BacklogPanel));
-  expect(html).toContain("Unavailable"); expect(html).toContain("never zero"); expect(html).toContain("future timestamps are excluded");
+  expect(html).toContain("Loading"); expect(html).toContain("never zero"); expect(html).toContain("future timestamps are excluded");
 });
-test("unconnected panels contain no illustrative data lines, numeric samples, or fake trends", () => {
+test("unloaded panels contain no illustrative data lines, numeric samples, or fake trends", () => {
   const stats = renderToStaticMarkup(createElement(ObservabilityStats));
-  expect(stats.match(/<strong>Unavailable<\/strong>/g)).toHaveLength(4);
+  expect(stats.match(/<strong>Loading…<\/strong>/g)).toHaveLength(4);
   expect(stats.match(/System-wide/g)?.length).toBeGreaterThanOrEqual(4);
   const html = renderToStaticMarkup(createElement(UnavailableMonitoringChart, { id: "test", title: "Webhook response time", description: "Histogram quantiles", unit: "Duration (seconds)", legend: [{ label: "p95", color: "#587e95" }] }));
-  expect(html).toContain("No historical data loaded."); expect(html).toContain("Time (UTC)"); expect(html).toContain("Duration (seconds)");
+  expect(html).toContain("No observed series in this window"); expect(html).toContain("Time (UTC)"); expect(html).toContain("Duration (seconds)");
   expect(html).not.toContain("<path"); expect(html).not.toContain("<polyline"); expect(html).not.toContain("data-series");
   const errors = renderToStaticMarkup(createElement(ApiErrorsPanel)); expect(errors).toContain("requests / sec"); expect(errors).toContain("not percentages");
 });

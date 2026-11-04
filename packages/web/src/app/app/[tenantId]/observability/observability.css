@@ -106,3 +106,17 @@
   .obs-integration > div { justify-content: flex-start; }
   .obs-connection-label { text-align: left; }
 }
+.obs-controls select:enabled { cursor: pointer; }
+.obs-data-plot { position: absolute; inset: 8px 18px 25px 47px; width: calc(100% - 65px); height: calc(100% - 33px); overflow: hidden; }
+.obs-tick-values { position: absolute; inset: 3px auto 25px 23px; width: 21px; display: flex; flex-direction: column; justify-content: space-between; text-align: right; color: #718492; font-size: 9px; }
+.obs-time-ticks { position: absolute; left: 47px; right: 18px; bottom: 13px; display: flex; justify-content: space-between; color: #718492; font-size: 9px; }
+.obs-zero-note { position: absolute; left: 47px; right: 18px; top: 55%; text-align: center; color: #637d8b; font-size: 12px; }
+.obs-metric-rows dd { text-align: right; overflow-wrap: anywhere; }
+.obs-metric-rows dd small { display: block; color: #7e8f99; font-size: 9px; }
+.obs-queue-values { max-width: 60%; }
+.obs-restricted { padding: 32px 24px; }
+.obs-restricted h2 { font-size: 28px; }
+.obs-restricted p { color: #637d8b; }
+.obs-request-error { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; margin-bottom: 16px; border: 1px solid #ecd5c9; border-radius: 8px; color: #a45437; }
+.obs-request-error p { margin: 0; }
+.obs-partial { color: #a45437; font-size: 12px; }
