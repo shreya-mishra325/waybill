@@ -4,7 +4,7 @@
 
 The API implements GitHub sign-in, server-side sessions, CSRF checks, logout, explicit tenant membership, and ingestion-only API keys. The local authentication migration is applied. Provider responses are mocked in automated tests; session persistence and permission revocation are tested against real local PostgreSQL. The actual API also passed a session-mode startup check with dummy credentials and no outbound GitHub request.
 
-Real GitHub sign-in succeeded on 2026-10-27 for `shreya-mishra325`: the callback created an active session and returned the browser to the public homepage. The account was explicitly granted membership in `dev-tenant`. The local environment is configured for session mode. The browser returned the expected GitHub identity and `dev-tenant` membership from `/auth/me`, and the authorized delivery-summary read succeeded. The browser logout check also passed: the CSRF-authenticated POST returned 204 and the next identity request returned 401. A primary-database audit confirmed zero active sessions for the account while its development-tenant membership remained intact. The public website has no sign-in UI yet.
+Real GitHub sign-in succeeded for `shreya-mishra325`: the callback created an active session and returned the browser to the public homepage. The account was explicitly granted membership in `dev-tenant`. The local environment is configured for session mode. The browser returned the expected GitHub identity and `dev-tenant` membership from `/auth/me`, and the authorized delivery-summary read succeeded. The browser logout check also passed: the CSRF-authenticated POST returned 204 and the next identity request returned 401. A primary-database audit confirmed zero active sessions for the account while its development-tenant membership remained intact. The public website has no sign-in UI yet.
 
 ## Local setup
 
@@ -122,12 +122,12 @@ Real provider authorization and the initial development-tenant grant are verifie
 
 References: [GitHub web authorization flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps), [OWASP session management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html), and [OWASP CSRF prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
 
-### Real browser checkpoint: 2026-10-27
+### Real browser checkpoint
 
 GitHub authorization, the callback redirect, `/auth/me`, explicit `dev-tenant` membership, and the replica-backed delivery summary were verified in Safari. Logout from the public website origin returned 204 with the session cookie and CSRF header; the subsequent `/auth/me` request returned 401. The server-side session was deleted and membership was preserved. Safari required the console verification code to run inside an async function rather than using top-level `await`.
-## Authenticated pipeline checkpoint: 2026-10-28
+## Authenticated pipeline checkpoint
 
-`bun run test:auth:flow` passed with run ID `e8e76f36-5025-4253-a4e5-4092a04d89d6`. The manifest and result are under ignored `logs/auth-flow-<run-id>*` paths. The runner uses a dedicated API on port 3113, temporary tenants and a locally-created session, and its own publisher, worker, and signed receiver. It does not read browser cookies or perform a new GitHub authorization. Browser/provider verification remains the separate 2026-10-27 checkpoint above.
+`bun run test:auth:flow` passed with run ID `e8e76f36-5025-4253-a4e5-4092a04d89d6`. The manifest and result are under ignored `logs/auth-flow-<run-id>*` paths. The runner uses a dedicated API on port 3113, temporary tenants and a locally-created session, and its own publisher, worker, and signed receiver. It does not read browser cookies or perform a new GitHub authorization. Browser/provider verification remains the separate checkpoint above.
 
 | Check | Result |
 | --- | --- |

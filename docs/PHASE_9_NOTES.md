@@ -62,7 +62,7 @@ The first preflight attempt requested the FIFO-only `FifoQueue` attribute on the
 
 The first complete submission run accepted and durably delivered all 300 events, with 6.948-second receiver p95 and an 8.404-second maximum. Its final queue assertion failed when an approximate count changed after the first empty reading. That attempt is not a passing baseline. Its records remain available under run ID `478e77b3-117a-4eb7-91e2-f56a2587be2e`. The drain check now waits for repeated empty observations within the original deadline instead of failing on that transition. The workload and latency thresholds are unchanged.
 
-## Passing baseline: 2026-10-27
+## Passing baseline
 
 Run ID: `eb7683eb-ed8c-4332-a3fc-38b4a129bf82`. The workload used the defaults above with no application performance changes between the two submission runs. The runner's queue-drain verification was the only changed path.
 
@@ -145,7 +145,7 @@ The worker now shares a queue of at most ten pending delete confirmations across
 
 The original 30-second tenant-turn deferral is retained, so this comparison against the original failing run changes confirmation scheduling only. The same six-tenant pressure profile and all pass/fail limits are reused.
 
-### Passing confirmation comparison: 2026-10-27
+### Passing confirmation comparison
 
 Run `2e79084b-2eea-42b6-8553-8363c604c911` passed the unchanged pressure profile. The saved configurations of all three runs were identical. Each run used fresh tenant IDs with the same logical roles and rates. The original and rejected runs' completed records were retained, so this is a local paired comparison, not an identical database snapshot or a production latency guarantee.
 
@@ -200,7 +200,7 @@ After worker startup, one quiet request per second continues until every accepte
 
 All accepted work must also have durable successful outcomes. Both process metrics and monitoring remain enabled through queue drain, and failures retain owned work for inspection. This test does not compare its adaptive quiet count with the fixed-duration pressure test as if they were identical workloads.
 
-### Completed preload checkpoint: 2026-10-27
+### Completed preload checkpoint
 
 Run `015851c9-3d58-442b-b8a2-0efb90d3c5fa` passed. All 1,200 busy events were accepted, published, and visible before worker startup, with no in-flight/delayed messages or receiver receipts. The run then submitted 404 quiet probes. All 1,604 events reached the signed receiver and durable `SUCCEEDED` state, with no rejected or uncertain requests, invalid signatures, or duplicate calls.
 
@@ -226,7 +226,7 @@ All owned events must have verified signed calls and the expected durable outcom
 
 The runner saves its manifest before creating work and logs under `logs/recovery-<run-id>*`. It restores the local replica after pause/outage, stops its own processes, and removes only its own database records after a passing run. Work from a failed published run remains for inspection. No queue purge or S3 fixture upload is performed.
 
-## Replica recovery finding: 2026-10-27
+## Replica recovery finding
 
 The first recovery run, `d296cb33-6bee-42fc-b33d-5675475121fb`, passed transient retry, exhausted delivery, ten concurrent replay requests producing one event, and ingestion/dispatch rate-limit checks. It then timed out reading the probe delivery from the replica. This run failed and is not a passing recovery result.
 
@@ -246,7 +246,7 @@ After rebuilding, the replica passed initial catch-up, paused-replay isolation, 
 
 References: [PostgreSQL streaming replication and slots](https://www.postgresql.org/docs/16/warm-standby.html), [base backup slot handling](https://www.postgresql.org/docs/16/app-pgbasebackup.html), and [replication slot retention](https://www.postgresql.org/docs/16/view-pg-replication-slots.html).
 
-## Passing recovery run: 2026-10-27
+## Passing recovery run
 
 Run `3b3456e4-c06b-4d97-88e3-1fc30f0bbd76` passed after the replication fix. The declared workload and limits were unchanged. The manifest, HTTP requests, signed call counts, process logs, pre-crash/final metric snapshots, and result are under `logs/recovery-3b3456e4-c06b-4d97-88e3-1fc30f0bbd76*`.
 

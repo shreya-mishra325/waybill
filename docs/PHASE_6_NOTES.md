@@ -74,7 +74,7 @@ Local HTTP tests exercise `postWebhook` against the verification handler. Valid 
 
 At the end of Phase 6, `bun test` passed 33 tests, with one opt-in PostgreSQL test skipped. API, worker, shared, and script TypeScript checks passed.
 
-## Full delivery test: 2026-10-25
+## Full delivery test
 
 Two events went through the local API, database outbox, existing AWS queue, worker, and verifying receiver. The queue and pending outbox were empty before the test. The receiver used the development tenant's existing secret.
 

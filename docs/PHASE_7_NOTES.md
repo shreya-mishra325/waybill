@@ -67,7 +67,7 @@ The script resumes replay and deletes its tenant in cleanup, then waits for the 
 docker compose -f docker-compose.yml -f docker-compose.replica.yml exec -T postgres-replica psql -U webhook -d webhook_platform -c 'SELECT pg_wal_replay_resume()'
 ```
 
-## Results: 2026-10-25
+## Results
 
 - The replica became healthy, and initial primary writes appeared through the read helper.
 - While replay was paused, the primary returned the new tenant name and the replica returned the previous name.
@@ -99,7 +99,7 @@ Pagination does not depend on the boundary row still existing. It is not a froze
 
 Invalid tenant IDs, query parameters, or cursors return 400. A failed replica read or a connection to a primary returns 503 with a generic error. The controller logs the underlying failure; the response does not expose connection details. The current API has no caller authentication. Tenant filtering limits each query's records, but a tenant ID in the URL is not proof that a caller owns that tenant.
 
-## Delivery history tests: 2026-10-25
+## Delivery history tests
 
 ```bash
 RUN_REPLICA_TESTS=1 bun test
@@ -142,7 +142,7 @@ The repository groups rows by status inside one replica read transaction. Counts
 
 The summary follows the same validation and failure behavior as history: malformed input returns 400, and an unavailable replica or a primary connection returns a generic 503. Tenant filtering still does not provide caller authentication.
 
-## Summary tests: 2026-10-25
+## Summary tests
 
 Unit tests covered empty results, every status count, unfinished-only workloads, rounding, all-successful outcomes, and all-dead-lettered outcomes. The local HTTP test checked tenant isolation, a tenant with no deliveries, unsupported query parameters, and invalid tenant IDs.
 
@@ -177,7 +177,7 @@ The S3 operation has one 15-second deadline covering the initial request and bod
 
 A missing S3 object can produce AccessDenied instead of NoSuchKey when the credentials lack bucket-list permission. That ambiguous response remains 503 rather than being presented as a confirmed deletion. See the [S3 GetObject permission behavior](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html).
 
-## Archive tests: 2026-10-25
+## Archive tests
 
 `RUN_REPLICA_TESTS=1 bun test` passed 52 tests, with the unrelated outbox test skipped. All package and script TypeScript checks passed. The tests covered tenant filtering, tied timestamps and pagination, incompatible cursors, missing records, caller-supplied key rejection, stale replica metadata, and safe replica-failure responses.
 
@@ -230,7 +230,7 @@ The response includes `replayId`, `deadLetterId`, `originalEventId`, the new `ev
 
 The API still has no caller authentication; the tenant filter is not an authorization mechanism. Replay auditing records the command and tenant, not a verified human operator.
 
-## Replay validation: 2026-10-25
+## Replay validation
 
 Migration `20261025010000_replays` adds the audit table without modifying existing delivery or outbox records. Historical migrations are unchanged. Prisma remains at 5.22.0.
 

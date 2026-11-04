@@ -11,6 +11,9 @@ see `docs/project-guide.md`. Phase notes: `docs/PHASE_0_NOTES.md`,
 Architecture and planned repository layout:
 [`docs/waybill-architecture.md`](docs/waybill-architecture.md)
 
+Backend and system design learning after Phase 9:
+[Post-Phase-9 notes](docs/FINAL_NOTES.md).
+
 ## Quick start
 
 Requires [Bun](https://bun.sh) and a free-tier AWS account (SQS + S3).

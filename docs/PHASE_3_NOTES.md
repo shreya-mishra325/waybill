@@ -2,7 +2,7 @@
 
 Phase 2 delivered once and deleted the SQS message on success. Phase 3 keeps a failed message until it either succeeds or is exhausted, then archives it.
 
-## What I shipped
+## Implementation
 
 - Exponential backoff with full jitter: `random(0, min(1000 * 2^(n-1), 60000))`.
 - On failure, `deliveries.nextAttemptAt` is set and SQS visibility is changed to match. The message is not deleted.

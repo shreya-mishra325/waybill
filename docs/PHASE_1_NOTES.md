@@ -2,7 +2,7 @@
 
 Phase 1 is the write path only. A tenant backend POSTs an event. Waybill records that event and, in the same database transaction, records that it still needs to be published. Nothing is sent to SQS yet.
 
-## What I shipped
+## Implementation
 
 - Layered ingest: route, controller, service, repository.
 - `POST /events` accepts `{ tenantId, type, payload }` and returns `{ eventId, outboxId, storedIn }`.

@@ -98,7 +98,7 @@ bun run test:fairness --help
 bun run node_modules/typescript/bin/tsc -p packages/shared/scripts/tsconfig.json --noEmit
 ```
 
-## First measured run: 2026-10-17
+## First measured run
 
 Run ID: `9caac609-de5e-496c-afe1-b7bfa4b8141b`. Local report: `logs/fairness-phase5.json` (ignored by Git). API ran on port 3100 and the receiver on 4100, with one publisher and one delivery worker. Ingestion and dispatch used their default independent budgets of 10 tokens and 10 tokens/second. Runner settings were the defaults listed above.
 
@@ -130,7 +130,7 @@ The batch tests cover sequential delivery, overlapping acknowledgements, waiting
 - Run `a1bf7205-a393-4a33-afd9-80316001a9df` was interrupted before report generation. A subsequent drain confirmed 182 busy and 19 quiet events, including baseline, all had successful deliveries and no unpublished outbox rows remained.
 - Run `2fe46d51-73c1-461e-9982-25a36650d6c7` used the new publisher and overlapping acknowledgements with receive batches of five. All 252 accepted busy events and 24 quiet events, including baseline, arrived. Quiet load p95 was 35,632 ms, still above 30,000 ms. Its report is `logs/fairness-phase5-final.json`. Receive batches were then increased to ten for the next measurement.
 
-## Passing measurement: 2026-10-18
+## Passing measurement
 
 Run ID: `6d7832b0-2531-42fb-befa-4947dc9ecb71`. Report: `logs/fairness-phase5-batch10.json`. The runner retained 10,000 busy requests, concurrency 20, one quiet request per second, a 30,000 ms quiet p95 threshold, and a 600,000 ms deadline. Tenant budgets remained at their defaults. One publisher and one worker ran on the same development infrastructure as before, with the API on 3100 and receiver on 4100.
 
@@ -178,7 +178,7 @@ The larger intake budget applies only to the test API process. Normal delivery l
 
 The report includes its mode, publication and queue evidence, and per-probe backlog observations. On completion, the runner waits for queue drain before stopping its worker and receiver. Interrupted or failed runs preserve their accepted events; drain any remaining work before another measurement. Test tenants and delivery records remain available for inspection.
 
-## Accepted-backlog measurement: 2026-10-22
+## Accepted-backlog measurement
 
 Run ID: `b8b57c2c-837f-47e5-8f03-caf497d2346e`. Report: `logs/fairness-backlog-2026-10-22.json`. The run confirmed 1,000 published busy-tenant outbox entries and an SQS visible-message estimate of 1,000 before starting dispatch. API and receiver ports were 3100 and 4100. The test API used capacity 2,000 and refill 1,000/second; the worker retained its default capacity 10 and refill 10/second. One publisher and one runner-managed worker ran on the Mac.
 
@@ -236,7 +236,7 @@ The receive buffer remains bounded at one hundred messages, while HTTP delivery 
 
 The dispatch-turn tests cover a quiet tenant behind one hundred busy selections, independent per-tenant budgets, conservation of ready/deferred selections, and reset between cycles. The turn budget is held in worker memory; it does not require another queue or database table.
 
-## Passing worker-turn measurement: 2026-10-22
+## Passing worker-turn measurement
 
 Run ID: `44338920-af5f-4eb1-8fc0-a59ab82a704a`. Report: `logs/fairness-backlog-turns-2026-10-22.json`. The runner retained the same 1,000-event accepted preload, request concurrency 20, one quiet submission per second, a 900,000 ms deadline, and the 30,000 ms quiet p95 criterion. API intake and worker token-bucket settings were unchanged from the failing backlog run.
 

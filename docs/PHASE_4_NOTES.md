@@ -2,7 +2,7 @@
 
 Phase 3 proved the worker could retry and dead-letter failed deliveries. Phase 4 adds the next protective layer: a Redis-backed circuit breaker keyed by destination URL so a stubborn endpoint is not hammered while it is down.
 
-## What I shipped
+## Implementation
 
 - Redis-backed breaker state stored under a per-target key.
 - States follow the standard pattern: closed -> open -> half-open -> closed/open.

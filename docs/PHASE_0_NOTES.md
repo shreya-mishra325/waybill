@@ -1,8 +1,8 @@
-# Phase 0 — Local platform and AWS wiring
+# Phase 0 - Local platform and AWS wiring
 
-Phase 0 was about getting a boring, honest foundation in place: two local services, one empty API, a real AWS queue and bucket, and a database schema I can migrate. Nothing is delivering webhooks yet.
+Phase 0 set up the local services, an API health endpoint, a real AWS queue and bucket, and the initial database schema. Webhook delivery comes in later phases.
 
-## What I shipped
+## Implementation
 
 - A Bun workspace with `packages/api`, `packages/worker`, and `packages/shared`.
 - Docker Compose for Postgres and Redis only. SQS and S3 are the real AWS free-tier services, hit from my laptop.
@@ -12,22 +12,28 @@ Phase 0 was about getting a boring, honest foundation in place: two local servic
 
 ## What I learned
 
-**Keep local infra and cloud infra in different boxes.**  
+**Keep local infra and cloud infra in different boxes.**
+
 Postgres and Redis are easy to run in Docker. SQS and S3 are not worth emulating for this project. Using the real services from day one means IAM, regions, and timeouts show up immediately, not as a surprise at deploy time.
 
-**`localhost` is not always the process you think it is.**  
+**`localhost` is not always the process you think it is.**
+
 I already had PostgreSQL 18 installed on Windows, bound to `127.0.0.1:5432`. Prisma was authenticating against that instance, not the Docker container, so user `webhook` failed even though Compose was healthy. I published the container on host port `55432` and pointed `DATABASE_URL` at `127.0.0.1:55432`. The local Postgres install can stay for other work.
 
-**Pin the Prisma CLI you actually depend on.**  
+**Pin the Prisma CLI you actually depend on.**
+
 A bare `bunx prisma` resolved Prisma 7, which no longer accepts `url` in `schema.prisma`. The app depends on Prisma 5. Generating and migrating through `prisma@5.22.0` made the schema valid again. Lesson: in a monorepo, “the latest CLI” is not “the CLI in package.json.”
 
-**IAM should match the operation, not a tutorial list.**  
+**IAM should match the operation, not a tutorial list.**
+
 The first check used `ListQueues` / `ListBuckets`. Those are account-wide actions, so a user scoped to one queue correctly got `AccessDenied`. The check now talks to `SQS_QUEUE_URL` and `S3_BUCKET_NAME` only. That matches how this project should be credentialed: one queue, one bucket, no admin policy.
 
-**Every remote call needs a deadline.**  
+**Every remote call needs a deadline.**
+
 The AWS helpers abort the SDK request after eight seconds. Racing a timer without aborting would leave the HTTP call running in the background. If AWS hangs, the process should fail clearly, not sit there.
 
-**Secrets stay out of git.**  
+**Secrets stay out of git.**
+
 `.env` is local. `.env.example` is the only env file in the repo. Access keys, the account id, and the real queue/bucket names do not belong in commits.
 
 ## Checkpoint

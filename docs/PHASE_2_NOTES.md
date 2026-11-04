@@ -2,7 +2,7 @@
 
 Phase 1 stored the intent. Phase 2 turns that intent into a real HTTP POST. The API still does not talk to SQS.
 
-## What I shipped
+## Implementation
 
 - A test receiver on port 4000 that stands in for a tenant webhook.
 - An outbox poller that reads `published = false`, `SendMessage`s to SQS, then marks the row published.

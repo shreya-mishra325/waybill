@@ -216,7 +216,7 @@ All backend and script TypeScript checks passed after adding the monitoring comm
 
 The client dependency is pinned to `prom-client` 15.1.3. Registry, counter, histogram, and gauge behavior follows the [client documentation](https://github.com/siimon/prom-client/tree/v15.1.3).
 
-## Live monitoring flow: 2026-10-26
+## Live monitoring flow
 
 ```bash
 bun run test:monitoring:flow
@@ -250,7 +250,7 @@ Monitoring was restored after the outage. The owned API, publisher, worker, and 
 
 The completed report is under logs/monitoring-flow-dbd99489-9aa3-44a0-83f0-42d0c7e6979a-result.json. Process logs and a recovery manifest are kept under the same run prefix without secrets or payload contents. PostgreSQL, Redis, Prometheus, and Grafana remain running locally.
 
-## Off/on overhead probe: 2026-10-26
+## Off/on overhead probe
 
 ```bash
 bun run test:monitoring:overhead
