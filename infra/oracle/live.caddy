@@ -1,0 +1,13 @@
+@api path /auth /auth/* /tenants /tenants/* /events /events/*
+handle @api {
+    header Cache-Control "private, no-store"
+    reverse_proxy 127.0.0.1:3000
+}
+@private path /app /app/* /api/observability /api/observability/*
+handle @private {
+    header Cache-Control "private, no-store"
+    reverse_proxy 127.0.0.1:3001
+}
+handle {
+    reverse_proxy 127.0.0.1:3001
+}

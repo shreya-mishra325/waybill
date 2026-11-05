@@ -1,0 +1,9 @@
+{
+  "extends": "../../packages/shared/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "typeRoots": ["../../packages/shared/node_modules", "../../node_modules/@types"]
+  },
+  "include": ["./*.ts"]
+}

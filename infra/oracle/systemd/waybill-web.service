@@ -1,0 +1,30 @@
+[Unit]
+Description=Waybill public website and dashboard
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=waybill
+Group=waybill
+WorkingDirectory=/opt/waybill/current
+EnvironmentFile=/etc/waybill/web.env
+ExecStart=/bin/bash /opt/waybill/current/infra/oracle/run.sh web
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+MemoryHigh=1536M
+MemoryMax=2G
+CPUQuota=150%
+TasksMax=256
+LogNamespace=waybill
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

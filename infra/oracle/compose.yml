@@ -1,0 +1,132 @@
+name: waybill-oracle
+
+x-service: &service
+  platform: linux/arm64
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "2"
+
+services:
+  postgres:
+    <<: *service
+    image: postgres:16-alpine
+    env_file: /etc/waybill/infra.env
+    command: [postgres, -c, shared_buffers=128MB, -c, max_connections=60, -c, max_slot_wal_keep_size=256MB]
+    ports: ["127.0.0.1:15432:5432"]
+    volumes:
+      - primary_data:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-waybill.sh:ro
+    networks: [database]
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U webhook -d webhook_platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  postgres-replica:
+    <<: *service
+    image: postgres:16-alpine
+    entrypoint: [sh, /replica/start-replica.sh]
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      PGPASSWORD: ${REPLICATION_PASSWORD:?Set the protected infrastructure environment file}
+      PGCONNECT_TIMEOUT: "5"
+    ports: ["127.0.0.1:15433:5432"]
+    volumes:
+      - replica_data:/var/lib/postgresql/data
+      - ../postgres/start-replica.sh:/replica/start-replica.sh:ro
+    networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 768m
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          psql -U webhook -d webhook_platform -Atc "SELECT pg_is_in_recovery() AND EXISTS (SELECT 1 FROM pg_stat_wal_receiver WHERE status = 'streaming')" | grep -qx t
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  redis:
+    <<: *service
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, "yes", --appendfsync, everysec, --maxmemory, 128mb, --maxmemory-policy, noeviction]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: [redis_data:/data]
+    networks: [database]
+    mem_limit: 256m
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  prometheus:
+    <<: *service
+    image: prom/prometheus:v3.15.1
+    profiles: [monitoring]
+    network_mode: host
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.listen-address=127.0.0.1:9090
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
+      - --storage.tsdb.retention.size=256MB
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus_data:/prometheus
+    mem_limit: 384m
+    healthcheck:
+      test: [CMD, wget, -q, --spider, "http://127.0.0.1:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+
+  grafana:
+    <<: *service
+    image: grafana/grafana:13.2.4
+    profiles: [monitoring]
+    network_mode: host
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?Set Grafana user}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set Grafana password}
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: "3300"
+      GF_SERVER_ROOT_URL: http://127.0.0.1:3300
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ../monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, wget, -q, --spider, "http://127.0.0.1:3300/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+
+networks:
+  database:
+    internal: true
+
+volumes:
+  primary_data:
+  replica_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

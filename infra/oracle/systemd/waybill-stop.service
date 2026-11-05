@@ -1,0 +1,8 @@
+[Unit]
+Description=Latch Waybill backend off while preserving public pages
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/waybill/current/infra/oracle/stop.sh
+TimeoutStartSec=180
+LogNamespace=waybill

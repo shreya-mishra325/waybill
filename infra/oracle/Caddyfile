@@ -1,0 +1,7 @@
+{$WAYBILL_HOST} {
+    encode zstd gzip
+    header -Server
+    @internal path /metrics /metrics/* /health /health/*
+    respond @internal 404
+    import /etc/caddy/waybill-mode.caddy
+}

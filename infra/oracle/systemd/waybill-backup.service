@@ -1,0 +1,16 @@
+[Unit]
+Description=Encrypted Waybill database and role backup
+Requires=waybill-infra.service
+After=waybill-infra.service network-online.target
+StartLimitIntervalSec=6h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/waybill/backup.env
+ExecStart=/bin/bash /opt/waybill/current/infra/oracle/backup.sh
+TimeoutStartSec=15min
+Restart=on-failure
+RestartSec=15min
+UMask=0077
+LogNamespace=waybill

@@ -1,0 +1,34 @@
+[Unit]
+Description=Waybill persistent %i
+Requires=waybill-infra.service waybill-guard.service waybill-guard.timer
+After=network-online.target waybill-infra.service waybill-guard.service waybill-guard.timer
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=waybill
+Group=waybill
+WorkingDirectory=/opt/waybill/current
+EnvironmentFile=/etc/waybill/%i.env
+ExecStart=/bin/bash /opt/waybill/current/infra/oracle/run.sh %i
+ExecStopPost=+/bin/bash /opt/waybill/current/infra/oracle/lease-stop.sh
+Restart=on-failure
+RestartPreventExitStatus=78
+RestartSec=15
+TimeoutStopSec=45
+KillMode=control-group
+MemoryHigh=512M
+MemoryMax=768M
+CPUQuota=100%
+TasksMax=128
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+LogNamespace=waybill
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+[Unit]
+Description=Retired Waybill one-hour demo unit
+RefuseManualStart=yes
+ConditionPathExists=/etc/waybill/retired-demo-unit-do-not-create
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/false

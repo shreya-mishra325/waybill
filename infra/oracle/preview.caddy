@@ -1,0 +1,8 @@
+@held path /app /app/* /auth /auth/* /tenants /tenants/* /events /events/* /api/observability /api/observability/*
+handle @held {
+    header Cache-Control "private, no-store"
+    respond "The public website is online. Dashboard and webhook processing are temporarily unavailable." 503
+}
+handle {
+    reverse_proxy 127.0.0.1:3001
+}

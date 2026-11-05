@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Waybill encrypted off-host backup
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+Unit=waybill-backup.service
+
+[Install]
+WantedBy=timers.target

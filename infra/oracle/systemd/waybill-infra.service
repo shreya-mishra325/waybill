@@ -1,0 +1,16 @@
+[Unit]
+Description=Waybill persistent private dependencies
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/waybill/current
+ExecStart=/usr/bin/docker compose --env-file /etc/waybill/infra.env -f infra/oracle/compose.yml --profile monitoring up -d --wait
+TimeoutStartSec=180
+LogNamespace=waybill
+
+[Install]
+WantedBy=multi-user.target

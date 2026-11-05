@@ -1,0 +1,18 @@
+[Unit]
+Description=Waybill credit, deadline, health, and backup guard
+Requires=waybill-infra.service
+After=waybill-infra.service network-online.target
+OnFailure=waybill-stop.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/waybill/current
+EnvironmentFile=/etc/waybill/guard.env
+ExecStart=/usr/local/bin/bun infra/oracle/guard.ts enforce
+TimeoutStartSec=45
+StateDirectory=waybill-guard
+RuntimeDirectory=waybill-guard
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+UMask=0077
+LogNamespace=waybill
