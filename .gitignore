@@ -60,3 +60,11 @@ GEMINI.md
 .codex/
 .claude/
 .gemini/
+
+# local deployment references
+/docs/DEPLOYMENT_PLAN.md
+/docs/DEPLOYMENT_PLAN_REFERENCE.md
+/docs/STAGING_PLAN.md
+
+# local README reference kit
+/waybill-readme/
