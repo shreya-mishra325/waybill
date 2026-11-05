@@ -260,7 +260,7 @@ Prometheus and Grafana are now scoped in Phase 8. The remaining goals are separa
 - [x] Add tenant-bound, ingestion-only API keys with hashed storage, one-time disclosure, bounded expiry, primary-backed validation, paginated metadata, and revocation. Removing the creator's membership disables its keys.
 - [x] Verify authenticated ingestion and idempotent replay through real SQS and signed delivery using a temporary session and keys. The run reached three successful outcomes and one intentional dead letter, then drained and cleaned up.
 
-See [authentication setup and contract](./AUTHENTICATION.md). The local environment uses session mode. Real GitHub sign-in and browser logout are verified, and both cookie and application-key writes passed the authenticated pipeline check. Production rejects the development bypass. Remaining work is frontend integration and release hardening.
+See [authentication setup and contract](./AUTHENTICATION.md). The local environment uses session mode. Real GitHub sign-in and browser logout are verified, and both cookie and application-key writes passed the authenticated pipeline check. Production rejects the development bypass. Frontend integration is implemented. Hosted configuration and release verification remain.
 
 ### Final tenant dashboard integration
 

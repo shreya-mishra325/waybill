@@ -1,8 +1,8 @@
 # Oracle Always Free portfolio deployment
 
-Run the complete public website, documentation, GitHub-authenticated dashboard, API, publisher, worker, private receiver, PostgreSQL primary/physical replica, Redis, and private Prometheus/Grafana on one Always Free ARM64 VM for at most 60 days. Budget remains **₹0/month**. The intended start is in November 2026; calculate the actual end from the approved launch time. February 2027 AWS eligibility is an owner-provided expectation, not a verified account fact.
+Run the complete public website, documentation, GitHub-authenticated dashboard, API, publisher, worker, private receiver, PostgreSQL primary/physical replica, Redis, and private Prometheus/Grafana on one Always Free ARM64 VM for at most 60 days. Budget remains **₹0/month**. Set the operating window from the actual launch time and verify the AWS benefits expiry in the account console.
 
-The prepared configuration is persistent, not a one-hour demo. Backend services restart after crashes and start at boot while their running permission remains valid. There is no new application feature, UI redesign, cloud deployment, or resource purchase in this change.
+Backend services start at boot and restart after crashes while the cost guard permits operation. Deployment is pending account verification and ARM64 runtime checks.
 
 ## Decisions and financial boundary
 
@@ -33,11 +33,11 @@ Run `bun infra/oracle/estimate.ts` to derive the idle estimate from the actual w
 
 The standard SQS allowance is monthly and account-wide, not a transferable 60-day pool. A 60-day window can touch three calendar months. Treat every grouped queue operation as potentially additionally fair-metered until the selected-region quote confirms otherwise. Rate example for budgeting only: at USD 0.40/million standard and USD 0.10/million fair requests, 3.015 million requests would be about USD 1.51 gross if every request were fair-metered and no allowance applied. A three-times request contingency is about USD 4.52 at those illustrative rates. Confirm actual region prices; do not claim that exact bill.
 
-At illustrative S3 Standard rates of USD 0.005/1,000 PUT-class, USD 0.0004/1,000 GET-class, and USD 0.023/GB-month, the stated S3 envelope is about USD 0.13 before transfer and tax. Console browsing, SDK retries, larger payloads, other account users, and failed requests can change usage. Before launch, require verified applicable credits/allowances covering a **USD 10 planning envelope plus at least USD 5 untouched shutdown reserve**, and include any other account consumption. Credits are not cash budget approval.
+At illustrative S3 Standard rates of USD 0.005/1,000 PUT-class, USD 0.0004/1,000 GET-class, and USD 0.023/GB-month, the stated S3 envelope is about USD 0.13 before transfer and tax. Console browsing, SDK retries, larger payloads, other account users, and failed requests can change usage. Before launch, require verified applicable credits/allowances covering a **USD 10 planning envelope plus at least USD 5 untouched shutdown reserve**, and include any other account consumption. Keep the cash budget at ₹0 even when credits are available.
 
 [SQS pricing](https://aws.amazon.com/sqs/pricing/), [S3 pricing](https://aws.amazon.com/s3/pricing/), [AWS S3 rate example](https://aws.amazon.com/blogs/storage/run-spark-31-faster-and-optimize-compute-costs-with-amazon-s3-express-one-zone-on-amazon-emr/). Region, eligibility, rounding, and monthly allowance rules require account verification. No CloudWatch custom metrics/logs, Cost Explorer calls, KMS customer keys, SNS pipeline, or paid backup service are required.
 
-## Prepared infrastructure
+## Infrastructure
 
 | Files | Purpose |
 | --- | --- |
@@ -48,38 +48,38 @@ At illustrative S3 Standard rates of USD 0.005/1,000 PUT-class, USD 0.0004/1,000
 | `guard.ts`, guard service/timer, `stop.sh`, `lease-stop.sh` | Read-only credit checks, 60-day/expiry cutoff, usage and health circuits, backup freshness, latched fail-safe stop |
 | `backup.sh`, backup service/timer | Daily noninteractive public-key encryption and upload to verified free OCI Object Storage |
 | `systemd/journald-waybill.conf` | Dedicated application journal capped at 256 MB and seven days; Docker logs remain separately bounded |
-| `env/*.example`, policy examples | Placeholder-only configuration, owner-reviewed account policy and least-privilege IAM templates |
+| `env/*.example`, policy examples | Environment templates, account policy and least-privilege IAM examples |
 
 The old `waybill-demo@.service` is retired and cannot be manually started. Disable installed old instances when migrating. The new services have no one-hour timeout.
 
 ### Fail-safe behavior
 
-1. Owner fills `/etc/waybill/cost-policy.json`: exact account ID, actual UTC start/end within 60 days, verified benefits expiry, covered-services acknowledgement, minimum reserve, and modest hourly usage thresholds. No secrets belong in that JSON. Defaults are examples, not automatic eligibility.
+1. Fill `/etc/waybill/cost-policy.json`: exact account ID, actual UTC start/end within 60 days, verified benefits expiry, covered-services acknowledgement, minimum reserve, and modest hourly usage thresholds. No secrets belong in that JSON. Defaults are examples, not automatic eligibility.
 2. A root-owned systemd timer runs the guard every minute using a separate credential with only `freetier:GetAccountPlanState`. That API is not called by public users or the frontend.
 3. Running permission ends at the earliest of the planned end, verified benefits expiry minus **72 hours**, or API-reported plan expiry minus **72 hours**. Credits at/below the configured reserve, malformed/missing policy, wrong account, PAID/expired plan, API failure, stale backup, excessive usage, or sustained unhealthy dependencies revoke permission.
 4. The root guard renews a root-owned 180-second lease. Each backend wrapper independently checks it every ten seconds, so a stopped/hung timer cannot authorize indefinite service. Root failure actions and wrapper stop hooks restore preview routing and latch shutdown. A restart never bypasses the lease.
 5. PostgreSQL, replica, Redis, web, and monitoring remain available locally; backend units stop. Accepted work and volumes are preserved. Full dashboard data/login may be temporarily unavailable after a safety stop; do not promise uninterrupted service when cost/security gates fail.
-6. Shutdown stays latched under `/var/lib/waybill-guard/STOPPED`. Recovery needs owner review, an amended valid policy if appropriate, removal of that specific latch, a successful guard check, and explicit service restart. No automatic account upgrade or credit top-up.
+6. Shutdown stays latched under `/var/lib/waybill-guard/STOPPED`. Before restarting, investigate the stop reason, correct the policy or dependency failure, remove that specific latch, and run a successful guard check. No automatic account upgrade or credit top-up.
 
 Usage circuits use existing Prometheus counters for SQS calls, accepted ingestion/replay, and archive reads. Queue sampling adds a fixed allowance. SDK retry attempts, payload chunks, S3 bytes, and other account activity are not completely metered there. They are conservative anomaly triggers, not an enforceable AWS currency cap. Dependency/scrape health gets a two-minute startup/restart grace; unknown monitoring responses fail closed. A backup must have successfully uploaded within 36 hours.
 
-Attach the reviewed `runtime-cutoff-policy.json.example` explicit date-deny to every dedicated runtime AWS principal, using the same or earlier effective cutoff. This is a second request boundary if the VM timer fails. It does not stop S3 storage charges. Export needed objects and remove dedicated AWS storage/resources before coverage ends, with separate approval. No script deletes AWS resources automatically.
+Attach the reviewed `runtime-cutoff-policy.json.example` explicit date-deny to every dedicated runtime AWS principal, using the same or earlier effective cutoff. This is a second request boundary if the VM timer fails. It does not stop S3 storage charges. Export needed objects and manually remove dedicated AWS resources before coverage ends. The scripts preserve cloud data; cleanup is a separate operation.
 
 ## Exact deployment sequence
 
-Commands below are future commands for the approved VM. Nothing has been deployed. Replace placeholders first and never overwrite existing configured environment files with examples.
+Run these commands on the ARM64 VM. Replace placeholders first; preserve existing environment files when installing templates.
 
-### 1. Owner: verify accounts, free capacity, and hostname
+### 1. Verify accounts, free capacity, and hostname
 
-Confirm Oracle home-region free A1 capacity, chosen image/CPU/RAM/boot/IP/network cost, total storage allocations, and the private backup bucket's free capacity. Choose ARM64 Ubuntu 24.04 and a free DuckDNS hostname. Do not select trial-only paid resources. Allow public 80/443, restricted SSH, and no direct database/API/receiver/monitoring ports, including IPv6. Preserve OCI-required firewall rules. Approval is required before VM, DNS, bucket, IAM, OAuth, or firewall changes.
+Confirm Oracle home-region free A1 capacity, chosen image/CPU/RAM/boot/IP/network cost, total storage allocations, and the private backup bucket's free capacity. Choose ARM64 Ubuntu 24.04 and a free DuckDNS hostname. Do not select trial-only paid resources. Allow public 80/443, restricted SSH, and no direct database/API/receiver/monitoring ports, including IPv6. Preserve OCI-required firewall rules. Verify the selected resources are free before creating them or changing account settings.
 
-Verify AWS in the account console: exact plan type, remaining eligible credits, actual expiry timestamp, SQS standard/fair allowances, S3 and transfer eligibility, other active services, and no auto-upgrade. November launch through roughly January ends before the reported February expiry, but only actual timestamps authorize it. Confirm the read-only API response is supported. If PAID/legacy, stop here for backend activation; the guard deliberately refuses to assume a no-charge boundary.
+Verify AWS in the account console: exact plan type, remaining eligible credits, actual expiry timestamp, SQS standard/fair allowances, S3 and transfer eligibility, other active services, and no auto-upgrade. Use the verified account timestamps to set the deployment cutoff. Confirm the read-only API response is supported. If PAID/legacy, stop here for backend activation; the guard deliberately refuses to assume a no-charge boundary.
 
 Set free AWS Budgets email notifications for actual and forecast cost/usage and enable available Free Tier notifications. Budgets without actions are free, but their data updates only several times a day. Do not enable paid actions, reports, or notifications without verification. Alerts supplement the guard and never authorize continued spending. [Budgets pricing/FAQs](https://aws.amazon.com/aws-cost-management/aws-budgets/faqs/), [update delays](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html).
 
 ### 2. Prepare the release and launch public pages
 
-Install approved system packages: Docker Compose, Caddy, Git, OpenSSL, unzip, CA certificates, GnuPG, and curl. Install verified Bun 1.4.3 aarch64 at `/usr/local/bin/bun` and an official ARM64 AWS CLI v2 supporting `freetier get-account-plan-state` at `/usr/local/bin/aws`. AWS CLI is an operations tool; no application dependency is added. Put the reviewed repository release at `/opt/waybill/current`, owned by the deployment account and readable by the unprivileged `waybill` service user.
+Install the required system packages: Docker Compose, Caddy, Git, OpenSSL, unzip, CA certificates, GnuPG, and curl. Install verified Bun 1.4.3 aarch64 at `/usr/local/bin/bun` and an official ARM64 AWS CLI v2 supporting `freetier get-account-plan-state` at `/usr/local/bin/aws`. AWS CLI is an operations tool; no application dependency is added. Put the reviewed repository release at `/opt/waybill/current`, owned by the deployment account and readable by the unprivileged `waybill` service user.
 
 ```bash
 sudo useradd --system --create-home --home-dir /var/lib/waybill --shell /usr/sbin/nologin waybill
@@ -97,7 +97,7 @@ bun node_modules/typescript/bin/tsc --noEmit -p infra/oracle/tsconfig.json
 AUTH_API_ORIGIN=https://REPLACE.duckdns.org bun run build:web
 ```
 
-Use the same final HTTPS hostname at build time and in both AUTH origins. Build as the deployment owner; do not copy macOS node_modules or `.next`. Dummy test URLs are only for injected-store tests, never service configuration. ARM64 support was checked against the lockfile, installed Prisma target list, and image manifests; Linux runtime still requires this VM verification.
+Use the same final HTTPS hostname at build time and in both AUTH origins. Build as the deployment user; do not copy macOS node_modules or `.next`. Dummy test URLs are only for injected-store tests, never service configuration. ARM64 support was checked against the lockfile, installed Prisma target list, and image manifests; Linux runtime still requires this VM verification.
 
 Install matching `env/web.env.example` and `env/caddy.env.example` as protected `/etc/waybill/web.env` and `caddy.env`, then fill their hostname values. Web environment is root:waybill 0640; Caddy's environment is root:caddy 0640. The systemd manager reads the latter as root. Keep the runtime user out of the Docker group.
 
@@ -117,7 +117,7 @@ sudo systemctl restart caddy
 
 The public site/docs are now testable without AWS. Backend paths return a no-store maintenance response. Keep public authentication unavailable until real configuration is ready.
 
-### 3. Owner: OAuth, dedicated AWS access, and private environment files
+### 3. Configure OAuth, AWS access, and environment files
 
 Register a separate GitHub OAuth app: homepage `https://<host>`, callback `https://<host>/auth/github/callback`. Inject its secret directly into api.env. Use a dedicated standard SQS queue and private S3 Standard bucket, SSE-SQS/S3-managed encryption, no public bucket access, and no paid KMS or optional logging/analytics. Review and attach only required runtime permissions and the dated deny policy. A separate read-only principal supplies guard.env; do not reuse administrator credentials.
 
@@ -139,13 +139,13 @@ sudo /usr/local/bin/bun --env-file=/etc/waybill/api.env run check:aws
 sudo /usr/local/bin/bun --env-file=/etc/waybill/api.env run seed:tenant
 ```
 
-AWS checks make requests and require prior approval. Keep admin credentials for migrations, runtime credentials for primary writes/security, restricted reader credentials for physical replica queries. Test reader SELECT on permitted data and denial on `users`, `auth_sessions`, `api_keys`, and `tenants`. Confirm catch-up and readonly transactions; do not replace the standby with a read-only primary.
+Run AWS checks only after verifying account coverage; they make real service requests. Keep admin credentials for migrations, runtime credentials for primary writes/security, restricted reader credentials for physical replica queries. Test reader SELECT on permitted data and denial on `users`, `auth_sessions`, `api_keys`, and `tenants`. Confirm catch-up and readonly transactions; do not replace the standby with a read-only primary.
 
 Record the demo tenant ID and transfer its generated HMAC secret privately into receiver.env. Both API and worker keep `RECEIVER_URL=http://127.0.0.1:4000/webhook`. The existing real signature-verifying receiver supports one tenant; only grant that workspace to invited users. A public portfolio does not mean open tenant signup or publicly shared API keys. First-boot init scripts do not rotate existing database passwords.
 
 ### 5. Configure automatic encrypted off-host backups before enabling the guard
 
-Use a verified free private OCI Standard Object Storage bucket for database backups, not S3. Owner imports only the GPG public encryption key into root's keyring and keeps the private key offline. Set a write-only prefix-scoped preauthenticated upload URL and full key fingerprint in protected backup.env. The URL is a secret; its validity must cover the deployment and final backup. Configure an eight-day object lifecycle/retention only after verifying free request/storage limits; keep versioning off. Eight daily encrypted snapshots must fit the remaining free allowance with headroom.
+Use a verified free private OCI Standard Object Storage bucket for database backups, not S3. Import only the GPG public encryption key into root's keyring. Keep the private key offline. Set a write-only prefix-scoped preauthenticated upload URL and full key fingerprint in protected backup.env. The URL is a secret; its validity must cover the deployment and final backup. Configure an eight-day object lifecycle/retention only after verifying free request/storage limits; keep versioning off. Eight daily encrypted snapshots must fit the remaining free allowance with headroom.
 
 Install `waybill-infra.service`, `waybill-backup.service`, and their timer, then:
 
@@ -158,7 +158,7 @@ sudo systemctl enable --now waybill-backup.timer
 sudo journalctl --namespace=waybill -u waybill-backup --since today
 ```
 
-A successful run dumps database and roles, encrypts without a private key on the VM, uploads both over HTTPS, then updates a root-owned success timestamp. Failed uploads do not mark success. Daily runs retry with bounded delays; local copies rotate after seven days, remote retention is owner-configured. Test decrypting and restoring a downloaded backup into separate storage before proceeding. A copy on the same reclaimable VM is not an off-host backup.
+A successful run dumps database and roles, encrypts without a private key on the VM, uploads both over HTTPS, then updates a root-owned success timestamp. Failed uploads do not mark success. Daily runs retry with bounded delays; local copies rotate after seven days, configure remote retention through the bucket lifecycle policy. Test decrypting and restoring a downloaded backup into separate storage before proceeding. A copy on the same reclaimable VM is not an off-host backup.
 
 ### 6. Enable the persistent guarded backend
 
@@ -186,24 +186,24 @@ sudo env WAYBILL_HOST=REPLACE.duckdns.org caddy validate --config /etc/caddy/Cad
 sudo systemctl reload caddy
 ```
 
-Sign in through real GitHub, obtain the verified numeric ID, then run `grant:tenant --github-id <numeric-id> --tenant <uuid>` using api.env. Set only approved immutable IDs in web.env's operator allowlist and restart web. Verify secure host-only cookies, CORS/CSRF, tenant isolation, and the server's own HTTPS `/auth/me` path. No session bypass, cookie widening, or public monitoring proxy.
+Sign in through real GitHub, obtain the verified numeric ID, then run `grant:tenant --github-id <numeric-id> --tenant <uuid>` using api.env. Set only intended immutable IDs in web.env's operator allowlist and restart web. Verify secure host-only cookies, CORS/CSRF, tenant isolation, and the server's own HTTPS `/auth/me` path. No session bypass, cookie widening, or public monitoring proxy.
 
 ## Zero-cost verification and end-to-end acceptance
 
-Before declaring the portfolio live:
+Verify before launch:
 
 - [ ] OCI console confirms free compute/image/IP/network/disk/object storage selections and all account-wide quotas; no paid account upgrade.
 - [ ] AWS actual account plan, numeric credits, covered services, exact expiry, reserve, and cutoff deny are verified; unsupported/PAID responses remain blocked.
 - [ ] Free budget/Free Tier email notifications are configured; no CloudWatch custom metrics, paid logs, Cost Explorer polling, NAT, paid backup plan, or KMS key.
 - [ ] Every CHANGE_ME/REPLACE value is resolved privately; secrets stay outside Git. Guard credential cannot ingest events, read payloads, mutate infrastructure, or upgrade the account.
 - [ ] All three Prometheus targets UP, Grafana datasource healthy through private SSH tunnel, operator authorized and non-operator denied. Existing dashboards use real series; no fabricated zeroes.
-- [ ] Real login, workspace access, Overview, list/details, API-key creation/revocation, small delivery, S3-backed delivery, retry, exhaustion/archive, payload retrieval, replay, and logout pass with a few owner-approved events.
+- [ ] Real login, workspace access, Overview, list/details, API-key creation/revocation, small delivery, S3-backed delivery, retry, exhaustion/archive, payload retrieval, replay, and logout pass with a small controlled workload.
 - [ ] Invalid CSRF and cross-tenant requests fail. Public site/docs and all four responsive sizes remain unchanged. No private service port is publicly reachable.
 - [ ] Restart each application process and reboot the VM during a maintenance pause: persistent sessions/data/outbox survive, containers restart, leases renew, worker resumes via existing visibility semantics, and duplicate delivery remains possible.
-- [ ] In an approved maintenance window, simulate an expired policy, unavailable credit response, reserve threshold, stopped timer, and failed backup. Backend stops and stays latched, public pages remain online, volumes/messages remain intact. Restore valid settings only after review.
+- [ ] During a maintenance window, simulate an expired policy, unavailable credit response, reserve threshold, stopped timer, and failed backup. Backend stops and stays latched, public pages remain online, volumes/messages remain intact. Restore valid settings only after review.
 - [ ] Download/decrypt/restore a backup into separate storage, verify records/roles and S3 dependencies, and measure RAM/disk/OOM behavior on actual ARM64 Linux.
 
-Never run laptop-only load/recovery helpers against hosted resources unchanged. No synthetic traffic was generated during preparation.
+The local load and recovery helpers have laptop-specific safety checks. Review their target configuration before using them against hosted resources.
 
 ## Two-month operations and shutdown
 
@@ -212,33 +212,33 @@ Never run laptop-only load/recovery helpers against hosted resources unchanged. 
 | Launch | Record exact 60-day maximum end, verified expiry/credits/reserve, account coverage, actual resource use, release SHA, restore result, and monthly request estimate. Keep private operators/keys limited. |
 | Every minute, automatic | Free Tier status/credit check, deadline, lease renewal, local usage circuits, resource/dependency/scrape health. Stop on invalid evidence. |
 | Daily, automatic | Encrypted database and role backup to verified free off-host storage; bounded retries and retention. Backend refuses to continue with a backup older than 36 hours. |
-| Weekly, owner | Check account-wide bill/credits, future coverage, budget email delivery, OCI quotas/reclamation notices, backups/restore accessibility, disk/WAL/log growth, and actual workload against estimate. Review unexpected increases without raising caps automatically. |
-| A week before end | Confirm final export/cleanup time, retain a restore-tested backup and needed payloads, and schedule approved resource cleanup before AWS coverage ends. |
+| Weekly | Check account-wide bill/credits, future coverage, budget email delivery, OCI quotas/reclamation notices, backups/restore accessibility, disk/WAL/log growth, and actual workload against estimate. Review unexpected increases without raising caps automatically. |
+| A week before end | Confirm final export/cleanup time, retain a restore-tested backup and needed payloads, and schedule resource cleanup before AWS coverage ends. |
 | Planned end or earliest safety cutoff | Stop ingress and backend, leave website/docs online, export preserved data, and revoke dedicated runtime credentials. The guard never extends the window by itself. |
 
 Prometheus/Grafana provide service monitoring without CloudWatch. Journald namespace `waybill` and bounded Docker json logs provide local diagnostics; use `journalctl --namespace=waybill -u <unit>` and `dc logs --tail=100 <service>`. Health scripts check low disk/memory, PostgreSQL, streaming replica, Redis, and scrape freshness. The VM clock must report NTP synchronization; an unsynchronized clock fails the health gate. Process crashes restart with delay and a burst limit; sustained failure latches off rather than loops indefinitely.
 
 For a planned stop, install preview routing and reload Caddy first. Keep a healthy receiver while the outbox and visible/in-flight/delayed queue settle; queue depth is approximate. Run the final backup, then `sudo systemctl start waybill-stop.service`. A credit/deadline emergency stops immediately rather than spending more to drain. API/worker still lack explicit termination drains: a crash/stop may redeliver via visibility expiry. Never purge accepted work, database volumes, or queues to hide it.
 
-**Stopping processes does not remove S3 storage charges.** Before verified coverage expires, owner approves export of needed payloads and deletion of only dedicated project objects/versions and queue resources, then revokes their credentials and checks the account for residual storage, logging, keys, and services. No cleanup script can silently delete live cloud data. The 72-hour margin is for backup/export/cleanup, not permission to incur charges. If AWS evidence becomes unavailable earlier, keep backend stopped and perform approved account cleanup while coverage remains.
+**Stopping processes does not remove S3 storage charges.** Before verified coverage expires, export needed payloads, delete only the dedicated project objects/versions and queue resources, revoke runtime credentials, and check for residual storage, logging, keys, and services. Cloud data cleanup is manual. The 72-hour margin is for backup/export/cleanup, not permission to incur charges. If AWS evidence becomes unavailable earlier, keep backend stopped and complete account cleanup while coverage remains.
 
 ### Recovery and rollback
 
-Pause ingress using preview mode, review root guard logs and actual account/health/backup state, and stop backend before changing releases. Do not restore an old paid/expired policy or lower the reserve to make startup pass. If the cause is corrected within the approved operating window, remove only `/var/lib/waybill-guard/STOPPED`, reset failed units, run the guard, restart backend, verify healthy checks, and explicitly restore live routing.
+Pause ingress using preview mode, review root guard logs and actual account/health/backup state, and stop backend before changing releases. Do not restore an old paid/expired policy or lower the reserve to make startup pass. If the cause is corrected within the configured operating window, remove only `/var/lib/waybill-guard/STOPPED`, reset failed units, run the guard, restart backend, verify healthy checks, and explicitly restore live routing.
 
 For application rollback, use the previous immutable, schema-compatible release and its Linux-native generated dependencies. Preserve current database volumes, accepted event IDs, outbox, replay audit records, S3 objects, and queued work. Back up before migrations; use migrate deploy, never migrate dev/reset. Incompatible migrations require a forward fix or separately reviewed recovery, not blind snapshot restore over newly accepted events. Test backup restore separately rather than overwriting the live primary. Lost replica-slot WAL requires reviewed replica rebuild; no primary fallback.
 
-## Remaining owner checkpoints
+## Account setup and launch checklist
 
-1. Verify/provide Oracle free capacity, SSH access, free hostname/DNS, and network approval; approve installation/deployment on that VM.
+1. Verify Oracle free capacity, configure SSH, hostname/DNS and firewall rules, then install the services.
 2. Verify AWS plan/API support, at least forecast-plus-reserve eligible credits, exact February expiry if applicable, service allowances, free alerts, and dedicated IAM/cutoff policies. PAID/legacy plan is a strict-budget blocker, not assumed eligible.
 3. Register hosted GitHub OAuth and inject credentials directly; choose authorized tenant/operator IDs and complete real browser login.
-4. Configure verified free OCI off-host backup storage, prefix-write URL, lifecycle/expiry, and offline GPG private-key custody; approve a restore test.
-5. Approve bounded real webhook tests, restart/shutdown validation, and the final data-export/resource-cleanup window. Handle Git manually.
+4. Configure verified free OCI off-host backup storage, prefix-write URL, lifecycle/expiry, and offline GPG private-key custody; test backup restoration.
+5. Run bounded webhook and restart/shutdown tests. Set the final export and resource-cleanup window.
 
-Local preparation and application regression tests can be completed without cloud access. Actual account eligibility, ARM64 runtime, billing coverage, private routing, delivery, backup upload/restore, and reboot/fail-safe behavior require the approved accounts/VM. No deployment, account upgrade, secrets change, cloud request with credentials, commit, or push has been performed.
+Account registration, billing verification, OAuth registration, IAM credentials, DNS and SSH access require direct account access. Local configuration checks do not establish hosted runtime behavior.
 
-## Local preparation checks
+## Preparation test results
 
 | Check | Result |
 | --- | --- |
@@ -247,10 +247,10 @@ Local preparation and application regression tests can be completed without clou
 | Backend tests | 114 passed, 6 opt-in database tests skipped, 0 failed |
 | Total executed tests | 193 passed, 0 failed; 6 skipped |
 | Backend, frontend, deployment TypeScript | Passed |
-| Production web build | Passed; approved routes preserved |
+| Production web build | Passed; existing routes preserved |
 | Compose with monitoring profile | Passed configuration parsing with example placeholders and environment-file resolution disabled |
 | Shell syntax and request estimate | Passed; 2,764,800 baseline queue calls for 60 days |
-| Actual Linux systemd/Caddy/container execution | Not verified: laptop lacks systemd/Caddy and Docker daemon is stopped |
-| Cloud eligibility, credits, IAM cutoff, encrypted upload/restore, real OAuth/delivery, and VM reboot | Not verified: requires owner-approved account/VM access |
+| Actual Linux systemd/Caddy/container execution | Not verified on the target ARM64 VM |
+| Cloud eligibility, credits, IAM cutoff, encrypted upload/restore, real OAuth/delivery, and VM reboot | Not verified: requires access to the configured accounts and VM |
 
-The process-wrapper tests use temporary local stub processes to exercise supervision, not fake application records or authenticated sessions. They do not prove Linux systemd behavior. No deployed services, environment secrets, application code, approved designs, or the unrelated architecture PDF deletion were changed.
+Wrapper tests exercise child-process supervision with local stub processes. Linux systemd, Caddy, cloud credentials and VM recovery still need verification on the target host.

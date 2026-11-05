@@ -109,10 +109,10 @@ API, publisher, and worker expose private Prometheus listeners. Grafana covers r
 
 The application uses fixed server-side queries for its Observability page. Every request checks the operator's verified numeric GitHub ID, including requests served from cached measurements.
 
-Metrics are **system-wide**. Zero, idle windows, missing series, stale samples, and non-finite values remain distinct; the screenshot below shows an idle window without substituting measurements. PostgreSQL retains delivery history, while Prometheus describes running services. Grafana has its own authentication, and raw monitoring endpoints stay private.
+Metrics are **system-wide**. Zero, idle windows, missing series, stale samples, and non-finite values remain distinct; the screenshot below shows a controlled local workload with successful calls, retries, and archived failures. PostgreSQL retains delivery history, while Prometheus describes running services. Grafana has its own authentication, and raw monitoring endpoints stay private.
 
 <div align="center">
-  <a href="assets/readme/observability.png"><img src="assets/readme/observability.png" width="1100" alt="Operator Observability showing real idle-window metrics, queue and outbox state, and explicit unavailable measurements" /></a>
+  <a href="assets/readme/observability.png"><img src="assets/readme/observability.png" width="1100" alt="Operator Observability showing real five-minute webhook traffic, response-time percentiles, queue depth, and API error rates" /></a>
 </div>
 
 ## Engineering decisions and evidence

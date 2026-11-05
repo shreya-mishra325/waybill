@@ -196,7 +196,7 @@ Focused HTTP tests cover 429 responses, malformed JSON, unavailable replica resp
 
 Registry tests cover independent instances, histogram values, opt-in configuration, loopback binding restrictions, allowed scrape methods, and collection failure responses. The actual API process passed startup checks with metrics enabled and disabled. An occupied metrics port produced the expected error log while `/health` still returned 200. The scrape worked on the separate listener, and `/metrics` on the application port returned 404. Temporary test processes stopped afterward.
 
-`bun run check:backend` passed all four configurations. `bun run test:backend` passed 89 tests, with four opt-in database suites skipped. The outbox publication and backlog database suites then passed separately against a fresh temporary PostgreSQL instance. The replica and replay suites were not rerun for this change.
+`bun run check:backend` passed all four configurations. `bun run test:backend` passed 89 tests, with four opt-in database suites skipped. The outbox publication and backlog database suites then passed separately against a fresh temporary PostgreSQL instance. This verification run did not include the replica or replay database suites.
 
 Twenty isolated publisher/worker scenarios passed with mocked database, Redis, and AWS boundaries and a real local webhook receiver. Cases cover send failure, persistence failure, a duplicate publication, successful delivery, delete failure followed by redelivery, retry visibility failure, preparation failure, retry exhaustion, archive failure, terminal persistence failure, circuit/rate/not-due deferrals, partial batch success, and malformed queue input. Module mocks run in child processes so they cannot affect other backend tests.
 

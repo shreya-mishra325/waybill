@@ -273,7 +273,7 @@ Every fault phase began with outstanding background work: 92, 90, 120, 124, 125,
 
 The duplicate successful call is consistent with at-least-once delivery during a crash window. Receivers must handle repeated event IDs. This test used an in-memory set to count logical effects; it does not establish durable receiver idempotency or exactly-once delivery. Process counters reset during restarts, so the report uses database outcomes for final event accounting rather than adding reset counters as if they were continuous.
 
-Backend types passed, and the backend suite passed 102 tests with four opt-in database tests skipped. The repaired replica also passed the live catch-up, paused-replay, rejected-write, and resume checks. Shell syntax and Compose configuration validation passed. Successful CI for the previously committed backend is recorded in the guide; these uncommitted changes still need their own CI run.
+Backend types passed, and the backend suite passed 102 tests with four opt-in database tests skipped. The repaired replica also passed the live catch-up, paused-replay, rejected-write, and resume checks. Shell syntax and Compose configuration validation passed. Local results are recorded here; verify the release commit separately in GitHub Actions.
 
 ## Phase 9 decision and remaining limits
 
@@ -281,4 +281,4 @@ The reproducible bottleneck was the confirmation barrier between receive batches
 
 There is no evidence that the `deliveries` table is the bottleneck, so no sharding or schema routing was added. The result is scoped to this laptop, local PostgreSQL/Redis/receiver, and the configured real AWS queue and bucket. Busy completion can still take several minutes, including more than eleven minutes in the slow-receiver pressure run. A production latency target, saturation capacity, multiple active delivery workers, a wider receiver-latency distribution, and long-duration failure soak tests remain unmeasured.
 
-Local Phase 9 checkpoints are complete. This does not complete GitHub authentication, tenant ownership enforcement, graceful shutdown/readiness, container release verification, managed replication, or hosted deployment. No website changes, dependency additions, commits, or pushes were made as part of the recovery checkpoint.
+Phase 9 establishes the local load and recovery baseline. Authentication, tenant authorization and release packaging are covered separately in the [backend notes](./FINAL_NOTES.md). Hosted replication, shutdown/readiness and deployment still require target-environment verification.

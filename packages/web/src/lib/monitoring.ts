@@ -1,4 +1,4 @@
-export const monitoringRanges = { '1h': { seconds: 3600, step: 15 }, '6h': { seconds: 21600, step: 60 }, '24h': { seconds: 86400, step: 120 } } as const;
+export const monitoringRanges = { '5m': { seconds: 300, step: 15 }, '1h': { seconds: 3600, step: 15 }, '6h': { seconds: 21600, step: 60 }, '24h': { seconds: 86400, step: 120 } } as const;
 export type MonitoringRange = keyof typeof monitoringRanges;
 export type MetricState = 'ready' | 'missing' | 'stale' | 'idle' | 'non-finite' | 'unavailable' | 'error';
 export type MetricValue = { state: MetricState; value: number | null };

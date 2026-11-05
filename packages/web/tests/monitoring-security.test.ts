@@ -64,7 +64,7 @@ test('topology preserves host-only cookies, rejects separate hosts, mixed scheme
 });
 test('only fixed queries and bounded range/steps are accepted; client URLs and PromQL never reach the datasource', async () => {
   for (const query of ['?range=7d', '?range=1h&range=24h', '?query=up', '?range=1h&url=http://evil', '?datasource=evil']) { const f = fixture(); expect((await f.handler(request(query), configuration)).status).toBe(400); expect(f.prometheus()).toHaveLength(0); }
-  for (const range of ['1h', '6h', '24h'] as const) {
+  for (const range of ['5m', '1h', '6h', '24h'] as const) {
     const f = fixture(); const response = await f.handler(request('?range=' + range), configuration); expect(response.status).toBe(200); const report = readMonitoringReport(await response.json(), range); expect(report.end - report.start).toBe(monitoringRanges[range].seconds);
     for (const call of f.prometheus()) { expect(Object.values(fixedMonitoringQueries)).toContain(call.url.searchParams.get('query')); expect(call.url.origin).toBe('http://127.0.0.1:9090'); expect(call.init?.signal).toBeDefined(); expect(call.init?.redirect).toBe('error'); if (call.url.pathname.endsWith('query_range')) expect(call.url.searchParams.get('step')).toBe(String(monitoringRanges[range].step)); }
   }

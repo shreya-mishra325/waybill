@@ -271,15 +271,15 @@ The three file-selection mechanisms need separate configuration: what Git tracks
 
 ## Configuration and verification limits
 
-`INGESTION_RATE_LIMIT_CAPACITY=10s` in `.env.example` was invalid for a field read with `Number(...)`. It is now `10`, matching the ingestion and shared token-bucket defaults. This capacity is a token count, not a duration. The template check explicitly verifies finite positive numbers and exercises the existing rate-limit, authentication, metrics, URL, and Prisma configuration. The local `.env` was not rewritten.
+`INGESTION_RATE_LIMIT_CAPACITY=10s` in `.env.example` was invalid for a field read with `Number(...)`. It is now `10`, matching the ingestion and shared token-bucket defaults. This capacity is a token count, not a duration. The template check explicitly verifies finite positive numbers and exercises the existing rate-limit, authentication, metrics, URL, and Prisma configuration.
 
 `API_AUTH_MODE=development` remains a deliberate authorization bypass for owned local test processes. Production configuration defaults to session mode, rejects an explicit development bypass, requires OAuth credentials, and requires HTTPS origins. A pipeline test that bypasses caller authentication must not be presented as a session-mode performance result.
 
 Correcting the example is not the same as adding comprehensive runtime validation to every numeric environment variable. JavaScript can produce NaN for malformed numeric strings, and a check that only compares a value with zero does not reject NaN. That distinction matters when reviewing other configuration paths.
 
-CI separates ordinary checks from the database integration job. The latter applies migrations to a fresh primary, starts a physical replica, and runs guarded persistence tests sequentially without competing publishers or consumers. Mocked SQS sends and controlled database fixtures do not establish live AWS permissions or production capacity. Local passing checks also do not prove an unpushed workflow passed on GitHub.
+CI separates ordinary checks from the database integration job. The latter applies migrations to a fresh primary, starts a physical replica, and runs guarded persistence tests sequentially without competing publishers or consumers. Mocked SQS sends and controlled database fixtures do not establish live AWS permissions or production capacity. Verify CI against the exact release commit; local results do not establish a hosted workflow result.
 
-The remaining backend deployment work includes production process definitions and supervision, readiness and shutdown verification, managed replication, backups, IAM, HTTPS routing, and private metrics connectivity. The current loopback-only listeners and Docker Desktop host discovery need a deliberate production networking plan. A successful local image build is one checkpoint, not a deployed or production-ready system.
+The [Oracle runbook](./ORACLE_DEPLOYMENT.md) covers process supervision, physical replication, backups, IAM, HTTPS routing and private monitoring. Those configurations still need verification on the target ARM64 host, including restart recovery and shutdown behavior. Loopback listeners and Docker Desktop host discovery cannot be carried into hosted networking unchanged.
 
 ## Evidence to revisit
 
