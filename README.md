@@ -36,7 +36,7 @@ The public site introduces the delivery model through an interactive architectur
 
 GitHub OAuth establishes identity; tenant membership grants workspace access. Signing in does not create a tenant. The workspace selector lists authorized memberships and scopes subsequent queries to the selected tenant.
 
-Opaque sessions use HttpOnly cookies. Session-backed writes require Origin and CSRF checks; tenant authorization is checked on the primary before reading data. API keys have the fixed `events:write` scope, reveal their secret once, and support expiry and revocation.
+Opaque sessions use HttpOnly cookies. Session-backed writes require Origin and CSRF checks; tenant authorization is checked on the primary before reading data.
 
 <table>
   <tr>
@@ -44,6 +44,12 @@ Opaque sessions use HttpOnly cookies. Session-backed writes require Origin and C
     <td width="50%"><a href="assets/readme/workspace-selection.png"><img src="assets/readme/workspace-selection.png" width="100%" alt="Workspace Selection showing the authorized local development workspace" /></a></td>
   </tr>
 </table>
+
+API keys authorize event ingestion with the fixed `events:write` scope. The profile menu opens the workspace’s key management page, which lists issued keys, expiry, and revocation state. A new secret is shown once at creation.
+
+<div align="center">
+  <a href="assets/readme/api-keys.png"><img src="assets/readme/api-keys.png" width="1100" alt="API key management showing issued key metadata, the creation form, fixed events:write scope, and profile-menu navigation" /></a>
+</div>
 
 ## Delivery management
 
@@ -100,6 +106,10 @@ The JSON inspector shows the stored delivery record. Dead letters retrieves the 
 </div>
 
 Exhausted deliveries retain their payload and failure state. An eligible replay checks the primary, archive, and configured destination, then commits a new event, outbox row, and audit record together. Tenant-scoped idempotency keys and uniqueness constraints prevent duplicate replay commands for the same source. The original failure remains available.
+
+<div align="center">
+  <a href="assets/readme/dead-letters.png"><img src="assets/readme/dead-letters.png" width="1100" alt="Dead Letters showing existing archived failures, the selected record’s stored error and JSON payload, and an eligible replay action" /></a>
+</div>
 
 Archival or persistence failures do not count as completed delivery. Delivery and replay share the destination configured by `RECEIVER_URL`. See the [detailed retry and replay flows](docs/waybill-architecture.md) for recovery sequences and guarantees.
 
@@ -167,7 +177,7 @@ For checks, run `bun run check:backend`, `bun test packages/web/tests`, `bun run
 
 ## Deployment status
 
-**Prepared, not deployed.** The [Oracle runbook](docs/ORACLE_DEPLOYMENT.md) and [configuration](infra/oracle/) target one Always Free ARM64 VM for Next.js, the backend processes, primary/replica, Redis, and private monitoring. SQS and S3 stay on AWS. The public website can launch first; persistent backend activation requires verified account coverage and fail-closed credit/expiry checks. There is no public deployment URL yet.
+**Not deployed.** The [deployment plan](docs/deployment.md) targets one Linux VM funded by Azure student credit, pending account eligibility, VM availability and capacity checks. SQS and S3 stay on AWS and require separate coverage verification. The [Oracle runbook](docs/ORACLE_DEPLOYMENT.md) and [configuration](infra/oracle/) remain a future hosting alternative. There is no public deployment URL yet.
 
 ## Further reading
 
