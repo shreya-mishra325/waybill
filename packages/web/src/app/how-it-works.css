@@ -45,7 +45,7 @@
 .architecture-packet { fill: var(--wb-accent); stroke: var(--wb-canvas); stroke-width: 1; }
 .architecture-canvas[data-motion="paused"] .architecture-packet { visibility: hidden; }
 .architecture-figure figcaption { margin-top: 16px; color: var(--wb-muted-on-dark); font-size: 11px; line-height: 1.5; }
-.architecture-detail { min-height: 118px; margin-top: 18px; padding-left: 15px; border-left: 2px solid var(--wb-accent); }
+.architecture-detail { min-height: 118px; margin-top: 18px; padding: 18px 20px; border: 1px solid #d5e4e633; border-radius: 8px; background: #103f50; }
 .architecture-detail > strong { color: var(--wb-ink-on-dark); font-size: 14px; font-weight: 500; }
 .architecture-detail p { max-width: 750px; margin: 6px 0 0; color: var(--wb-muted-on-dark); font-size: 13px; line-height: 1.6; }
 .architecture-support { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 20px 0 0; }

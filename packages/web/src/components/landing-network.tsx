@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { MOTION, ROUTES, flightPath, flightSegments, landingRoutes, networkLayout, sampleFlight, sampleRoute, scrollFlightDistance, type MeasuredRoute, type NetworkLayout, type Sample } from "../lib/network";
 import { Icon, type IconName } from "./icon";
+import { measureNetworkPath } from "../lib/network-geometry";
 
 const labels: {text: string; x: number; y: number; width: number; icon?: IconName; dark?: boolean}[] = [
   {text: "Event", x: 300, y: 132, width: 142, dark: true},
@@ -12,22 +13,14 @@ const labels: {text: string; x: number; y: number; width: number; icon?: IconNam
   {text: "Destination", x: 1310, y: 255, width: 172, icon: "globe"},
   {text: "Dead letter", x: 1300, y: 600, width: 180, icon: "archive", dark: true},
 ];
+const routeStrength = [0.85, 1, 0.7, 0.5, 0.5, 0.45] as const;
+
 type Occlusion = { x: number; y: number; width: number; height: number };
 type NetworkNode = { route: number; point: Sample; pulse?: "orange" | "cream"; phase: number };
 type NetworkPacket = { route: number; distance: number; speed: number };
 type Scene = { routes: MeasuredRoute[]; nodes: NetworkNode[]; packets: NetworkPacket[]; flight: MeasuredRoute; flightStops: {scroll: number; distance: number}[] };
 type View = {layout: NetworkLayout; height: number};
 const protectedText = ".site-header, .hero-content, .highlights, .product-copy, .product-preview figcaption, .how-copy, .architecture-tabs, .architecture-detail, .architecture-support, .architecture-figure figcaption, .data-flow-summary, .data-flow-step strong, .data-flow-protocol, .data-flow-diagram figcaption, .data-flow-detail, .features-heading, .developer-copy, .integration-example figcaption, .integration-copy-status, .docs-intro";
-
-function measurePath(path: SVGPathElement): MeasuredRoute {
-  const length = path.getTotalLength();
-  const spacing = 12;
-  const points = Array.from({length: Math.ceil(length / spacing) + 1}, (_, index) => {
-    const point = path.getPointAtLength(Math.min(index * spacing, length));
-    return {x: point.x, y: point.y};
-  });
-  return {points, length, spacing};
-}
 
 export function LandingNetwork() {
   const svg = useRef<SVGSVGElement>(null);
@@ -86,11 +79,7 @@ export function LandingNetwork() {
   useEffect(() => {
     const root = svg.current;
     if (!root) return;
-    function geometry(d: string) {
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute("d", d);
-      return measurePath(path);
-    }
+    const geometry = (d: string) => measureNetworkPath(d);
     const measured = routes.map(geometry);
     const heroLengths = ROUTES.map(d => geometry(d).length);
     const compact = layout.width <= 767;
@@ -108,22 +97,24 @@ export function LandingNetwork() {
       });
     });
     const referenceScale = 1536 / 927;
-    const whiteHighlight = {x: 347 * referenceScale, y: 133 * referenceScale};
-    let closest: {route: number; point: Sample; distance: number} | undefined;
-    measured.forEach((route, routeIndex) => {
-      if (compact && (routeIndex === 1 || routeIndex === 4)) return;
-      for (let index = 0; index < route.points.length && index * route.spacing <= heroLengths[routeIndex]!; index++) {
-        const point = route.points[index]!;
-        const distance = Math.hypot(point.x - whiteHighlight.x, point.y - whiteHighlight.y);
-        if (!closest || distance < closest.distance) closest = {route: routeIndex, point, distance};
-      }
-    });
-    if (closest) {
+    const whiteHighlights = [{x: 347, y: 133}, {x: 687, y: 212}, {x: 475, y: 369}];
+    whiteHighlights.forEach((reference, highlightIndex) => {
+      const target = {x: reference.x * referenceScale, y: reference.y * referenceScale};
+      let closest: {route: number; point: Sample; distance: number} | undefined;
+      measured.forEach((route, routeIndex) => {
+        if (compact && (routeIndex === 1 || routeIndex === 4)) return;
+        for (let index = 0; index < route.points.length && index * route.spacing <= heroLengths[routeIndex]!; index++) {
+          const point = route.points[index]!;
+          const distance = Math.hypot(point.x - target.x, point.y - target.y);
+          if (!closest || distance < closest.distance) closest = {route: routeIndex, point, distance};
+        }
+      });
+      if (!closest) return;
       const highlight = closest as {route: number; point: Sample; distance: number};
       const existing = nodes.find(node => node.route === highlight.route && Math.hypot(node.point.x - highlight.point.x, node.point.y - highlight.point.y) < 24);
       if (existing) { existing.point = highlight.point; existing.pulse = "cream"; }
-      else nodes.push({route: highlight.route, point: highlight.point, pulse: "cream", phase: 0.37});
-    }
+      else nodes.push({route: highlight.route, point: highlight.point, pulse: "cream", phase: (0.37 + highlightIndex * 0.19) % 1});
+    });
     const packets: NetworkPacket[] = [];
     (compact ? [0, 2] : [0, 1, 5]).forEach((route, index) => {
       const gap = compact ? 1000 : 2200;
@@ -159,6 +150,8 @@ export function LandingNetwork() {
     const paths = routes.map(d => new Path2D(d));
     const style = getComputedStyle(root);
     const routeColor = style.getPropertyValue("--wb-route").trim();
+    const secondaryColor = style.getPropertyValue("--wb-network-secondary-color").trim();
+    const routeDash = [Number(style.getPropertyValue("--wb-network-dash")), Number(style.getPropertyValue("--wb-network-gap"))];
     const accentColor = style.getPropertyValue("--wb-accent").trim();
     const dotColor = style.getPropertyValue("--wb-ink-on-dark").trim();
     const routeWidth = Number(style.getPropertyValue("--wb-network-width"));
@@ -267,10 +260,10 @@ export function LandingNetwork() {
         if (layout.width <= 767 && (index === 1 || index === 4)) return offset;
         context!.save();
         context!.translate(offset.x, offset.y);
-        context!.strokeStyle = routeColor;
+        context!.strokeStyle = index === 4 ? secondaryColor : routeColor;
         context!.lineWidth = routeWidth;
-        context!.globalAlpha = index === 0 || index === 4 ? secondaryOpacity : routeOpacity;
-        context!.setLineDash(index === 0 || index === 4 ? [2,7] : [3,6]);
+        context!.globalAlpha = (index === 4 ? secondaryOpacity : routeOpacity) * routeStrength[index]!;
+        context!.setLineDash(routeDash);
         context!.stroke(path);
         context!.restore();
         return offset;
@@ -282,6 +275,8 @@ export function LandingNetwork() {
         const offset = sway[node.route]!;
         const x = point.x + offset.x;
         const y = point.y + offset.y;
+        const inHero = point.y <= 900;
+        const prominence = node.route === 0 || node.route === 4 ? inHero ? 0.9 : 0.65 : 1;
         const nearby = animated && finePointer.matches ? Math.max(0, 1 - Math.hypot(point.x - cursor.x, point.y - cursor.y) / 170) : 0;
         if (node.pulse) {
           const cream = node.pulse === "cream";
@@ -289,11 +284,11 @@ export function LandingNetwork() {
           if (animated && phase < 0.62) {
             const progress = phase / 0.62;
             const eased = 1 - (1 - progress) ** 2;
-            circle(x, y, cream ? 3.3 + eased * 10 : 10 + eased * 25, cream ? routeColor : "#83b5bc", (1 - progress) ** 1.8 * (cream ? 0.16 : 0.26), true);
+            circle(x, y, cream ? 3.3 + eased * 10 : 10 + eased * 25, cream ? routeColor : "#83b5bc", (1 - progress) ** 1.8 * (cream ? 0.16 : 0.26) * prominence, true);
           }
           const sprite = cream ? creamPulseSprite.current : pulseSprite.current;
           if (sprite) {
-            context!.globalAlpha = 0.96 + nearby * 0.04;
+            context!.globalAlpha = (0.96 + nearby * 0.04) * prominence;
             const size = cream ? 24 : pulseSize;
             context!.drawImage(sprite, x - size / 2, y - size / 2, size, size);
           } else {
@@ -301,7 +296,7 @@ export function LandingNetwork() {
             circle(x, y, cream ? 3.3 : 10, cream ? dotColor : accentColor, 1);
             if (!cream) circle(x, y, 5, "#fffcf5", 1);
           }
-        } else circle(x, y, 2.5, dotColor, 0.78);
+        } else circle(x, y, prominence < 1 ? 2.4 : 2.8, dotColor, (inHero ? 0.98 : 0.85) * prominence);
       }
       for (const packet of scene!.packets) {
         const point = sampleRoute(scene!.routes[packet.route]!, packet.distance + seconds * packet.speed);
@@ -370,6 +365,7 @@ export function LandingNetwork() {
         </mask>
       </defs>
       <g mask={`url(#${maskId})`}><g className="network-world">
+        <g className="network-fallback">{routes.map((d, index) => <path key={index} className={`network-fallback-route route-${index}`} style={{opacity: routeStrength[index]}} d={d}/>)}</g>
         <g className="flight-system"><path className="flight-guide" d={flight}/><path className="flight-trail" d={flight}/>
           <g className="paper-plane"><g transform="scale(1.6)"><image href="/waybill-paper-airplane.svg" x="-21" y="-17" width="42" height="34"/></g></g>
         </g>

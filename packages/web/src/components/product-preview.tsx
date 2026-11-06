@@ -1,56 +1,62 @@
 "use client";
 
 import { useState } from "react";
-import { Icon } from "./icon";
+import { DashboardBrand, DashboardGlyph, StatusChip } from "./dashboard/ui";
+import { formatTimestamp, statusLabels } from "../lib/dashboard-format";
+import { deliveryStatuses, type DeliveryRecord, type DeliveryStatus } from "../lib/dashboard-types";
 
-type PreviewStatus = "SUCCEEDED" | "FAILED" | "DEAD_LETTERED";
-const examples: {id: string; destination: string; status: PreviewStatus; attempts: number}[] = [
-  {id: "8d4e…7a12", destination: "https://hooks.example.com/orders", status: "SUCCEEDED", attempts: 1},
-  {id: "b719…3f08", destination: "https://hooks.example.com/payments", status: "FAILED", attempts: 3},
-  {id: "c28a…9d41", destination: "https://hooks.example.com/updates", status: "DEAD_LETTERED", attempts: 8},
-  {id: "f603…2c76", destination: "https://hooks.example.com/orders", status: "SUCCEEDED", attempts: 1},
+type PreviewDelivery = Pick<DeliveryRecord, "id" | "event" | "targetUrl" | "status" | "attemptCount" | "createdAt" | "nextAttemptAt">;
+const destination = "https://hooks.example.com/webhook";
+const examples: PreviewDelivery[] = [
+  { id: "8d4e30a2-307e-4fd7-9ef3-a29c71ef7a12", event: { type: "order.shipped" }, targetUrl: destination, status: "SUCCEEDED", attemptCount: 1, createdAt: "2026-11-07T12:04:00Z", nextAttemptAt: null },
+  { id: "b719e052-8dfc-42b8-920e-573fed623f08", event: { type: "payment.received" }, targetUrl: destination, status: "FAILED", attemptCount: 3, createdAt: "2026-11-07T12:03:00Z", nextAttemptAt: "2026-11-07T12:05:00Z" },
+  { id: "c28a47f9-fd71-49d8-b92a-6b75fd7e9d41", event: { type: "account.updated" }, targetUrl: destination, status: "DEAD_LETTERED", attemptCount: 8, createdAt: "2026-11-07T12:02:00Z", nextAttemptAt: null },
+  { id: "f603a648-0a55-47ad-b01b-0432e49b2c76", event: { type: "order.created" }, targetUrl: destination, status: "FAILED", attemptCount: 1, createdAt: "2026-11-07T12:01:00Z", nextAttemptAt: null },
 ];
-const filters = [
-  {label: "All", status: "ALL"}, {label: "Delivered", status: "SUCCEEDED"},
-  {label: "Retrying", status: "FAILED"}, {label: "Dead letters", status: "DEAD_LETTERED"},
-] as const;
-const statusLabels: Record<PreviewStatus, string> = {
-  SUCCEEDED: "Delivered", FAILED: "Retry scheduled", DEAD_LETTERED: "Dead letter",
-};
+const filters: { label: string; status: "ALL" | DeliveryStatus }[] = [
+  { label: "All", status: "ALL" },
+  ...deliveryStatuses.map(status => ({ label: statusLabels[status], status })),
+];
 
 export function ProductPreview() {
-  const [filter, setFilter] = useState<typeof filters[number]["status"]>("ALL");
+  const [filter, setFilter] = useState<"ALL" | DeliveryStatus>("ALL");
   const visible = filter === "ALL" ? examples : examples.filter(row => row.status === filter);
   return <figure className="product-preview" aria-labelledby="preview-caption">
     <div className="delivery-viewer">
       <div className="viewer-header">
-        <span className="viewer-brand"><img src="/waybill-logo.png" width="23" height="23" alt=""/>Waybill</span>
+        <div className="viewer-brand"><DashboardBrand/></div>
+        <span className="viewer-menu-icon" aria-hidden="true"><DashboardGlyph name="menu"/></span>
+        <div className="viewer-navigation" aria-hidden="true"><span>Overview</span><span className="viewer-navigation-active">Deliveries</span><span>Dead letters</span><span>Observability</span></div>
         <span className="viewer-example-label">Example data</span>
       </div>
-      <div className="viewer-body">
-        <div className="viewer-sidebar" aria-hidden="true">
-          <span><Icon name="database"/>Overview</span>
-          <span className="viewer-sidebar-active"><Icon name="code"/>Deliveries</span>
-          <span><Icon name="archive"/>Dead letters</span>
-        </div>
-        <div className="viewer-main">
-          <h3>Deliveries</h3>
+      <div className="viewer-main">
+        <h3>Deliveries</h3>
+        <p className="viewer-subtitle">Browse webhook deliveries for this workspace.</p>
+        <div className="viewer-panel">
           <div className="viewer-filters" role="group" aria-label="Filter example deliveries">
             {filters.map(item => <button key={item.status} type="button" aria-pressed={filter === item.status} onClick={() => setFilter(item.status)}>{item.label}</button>)}
           </div>
-          <div className="viewer-table-scroll" tabIndex={0} role="region" aria-label="Example delivery records">
+          <div className="viewer-table-scroll" tabIndex={0} role="region" aria-label="Example delivery records; scroll horizontally to view all columns">
             <table className="viewer-table">
-              <thead><tr><th scope="col">Event</th><th scope="col">Destination</th><th scope="col">Status</th><th scope="col">Attempts</th></tr></thead>
-              <tbody>{visible.map(row => <tr key={row.id}>
-                <td className="viewer-event">{row.id}</td><td className="viewer-destination">{row.destination}</td>
-                <td><span className={`viewer-status viewer-status-${row.status.toLowerCase()}`}>{statusLabels[row.status]}</span></td><td className="viewer-attempts">{row.attempts}</td>
-              </tr>)}</tbody>
+              <colgroup>{[19, 14, 8, 20, 18, 8, 13].map((width, index) => <col key={index} style={{ width: `${width}%` }}/>)}</colgroup>
+              <thead><tr>{["Event", "Delivery ID", "Method", "Destination", "Status", "Attempts", "Created at"].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+              <tbody>{visible.map(row => {
+                const timestamp = formatTimestamp(row.createdAt);
+                return <tr key={row.id}>
+                  <td className="viewer-event"><span className={`viewer-event-dot dashboard-status-${row.status.toLowerCase()}`} aria-hidden="true"/><span title={row.event.type}>{row.event.type}</span></td>
+                  <td><code className="viewer-id" title={row.id}>{row.id.slice(0, 8)}…</code></td>
+                  <td><span className="viewer-method">POST</span></td>
+                  <td><span className="viewer-destination" title={row.targetUrl}>{row.targetUrl}</span></td>
+                  <td><StatusChip row={row}/></td><td className="viewer-attempts">{row.attemptCount}</td>
+                  <td><time dateTime={row.createdAt}>{timestamp.day}<small>{timestamp.time}</small></time></td>
+                </tr>;
+              })}{!visible.length && <tr><td className="viewer-empty" colSpan={7}>No example deliveries with this status.</td></tr>}</tbody>
             </table>
           </div>
           <p className="viewer-result" role="status">{visible.length} example {visible.length === 1 ? "delivery" : "deliveries"}<span className="viewer-scroll-hint"> · Scroll to see all columns</span></p>
         </div>
       </div>
     </div>
-    <figcaption id="preview-caption">Illustrative delivery viewer. Example records, not connected to an account.</figcaption>
+    <figcaption id="preview-caption">Interactive dashboard preview. Example records, not connected to an account.</figcaption>
   </figure>;
 }

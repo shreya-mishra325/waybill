@@ -11,9 +11,12 @@
   --wb-code-font: ui-monospace, SFMono-Regular, Consolas, monospace;
   --wb-border-light: #d9ded9;
   --wb-route: #d5e4e6;
-  --wb-network-width: 0.75;
-  --wb-network-opacity: 0.44;
-  --wb-network-secondary-opacity: 0.14;
+  --wb-network-width: 0.9;
+  --wb-network-opacity: 0.52;
+  --wb-network-secondary-opacity: 0.16;
+  --wb-network-secondary-color: #7eadb5;
+  --wb-network-dash: 5;
+  --wb-network-gap: 7;
   --wb-network-packet-opacity: 0.92;
   --wb-terminal-surface: #0b202b;
   --wb-terminal-chrome: #132e3a;

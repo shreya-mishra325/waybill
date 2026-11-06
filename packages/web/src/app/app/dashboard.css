@@ -171,12 +171,12 @@
 .dashboard-access { position: relative; display: flex; flex: 1; align-items: center; justify-content: center; min-height: 0; padding: clamp(16px, 4svh, 42px) 24px clamp(24px, 10svh, 100px); isolation: isolate; }
 .dashboard-access > .dashboard-artwork { right: 0; max-width: 100%; }
 .dashboard-access .dashboard-plane { display: none; }
-.dashboard-signin-card { position: relative; width: 100%; flex: none; max-width: 620px; margin: 0 auto; padding: 42px 50px 40px; border: 1px solid var(--dash-border); background: #fffefaee; border-radius: 20px; text-align: center; box-shadow: 0 10px 50px #39432b04; }
+.dashboard-signin-card { position: relative; width: 100%; flex: none; max-width: 620px; margin: 0 auto; padding: 72px 64px 44px; border: 1px solid var(--dash-border); background: #fffefaee; border-radius: 20px; text-align: center; box-shadow: 0 10px 50px #39432b04; }
 .dashboard-signin-card::after { content: ""; position: absolute; left: calc(100% + 16px); top: 44%; width: clamp(58px, 7vw, 108px); aspect-ratio: 58 / 46; background: url("/waybill-paper-airplane.svg") center / contain no-repeat; opacity: 0.5; pointer-events: none; animation: dashboard-plane-float 7s ease-in-out infinite; }
-.dashboard-signin-card .dashboard-brand { position: relative; top: -6px; flex-direction: column; gap: 4px; font-size: 32px; margin-bottom: 28px; }
+.dashboard-signin-card .dashboard-brand { flex-direction: column; gap: 4px; font-size: 32px; margin-bottom: 28px; }
 .dashboard-signin-card .dashboard-brand-symbol { height: 38px; }
-.dashboard-signin-card h1 { overflow-wrap: break-word; font-size: 52px; font-weight: 700; }
-.dashboard-signin-card > p { margin: 14px 0 34px; color: #7c8fa0; font-size: 23px; line-height: 1.5; }
+.dashboard-signin-card h1 { overflow-wrap: break-word; font-size: 48px; font-weight: 700; }
+.dashboard-signin-card > p { margin: 14px 0 34px; color: #7c8fa0; font-size: 21px; line-height: 1.5; }
 .dashboard-github-button { padding: 12px 18px; display: flex; align-items: center; justify-content: center; gap: 18px; width: 100%; min-height: 72px; border: 1px solid var(--dash-ink); border-radius: 12px; background: var(--dash-ink); color: #fff !important; font-size: 21px; }
 .dashboard-github-button svg { flex: none; width: 34px; height: 34px; }
 .dashboard-signin-card > .dashboard-signin-note { font-size: 16px; margin-block: 16px 28px; }
@@ -184,7 +184,7 @@
 .dashboard-divider::before, .dashboard-divider::after { content: ""; flex: 1; height: 1px; background: var(--dash-border); }
 .dashboard-email-button { width: 100%; display: flex; align-items: center; gap: 16px; min-height: 68px; padding: 12px 20px; border: 1px solid var(--dash-border); border-radius: 10px; background: transparent; color: #8a99a6 !important; font-size: 18px; }
 .dashboard-email-button > span { margin-left: auto; padding: 4px 9px; font-size: 14px; border: 1px solid var(--dash-border); border-radius: 8px; }
-.dashboard-back-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; max-width: 100%; margin-top: 30px; color: var(--dash-muted); font-size: 14px; }
+.dashboard-back-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; max-width: 100%; margin-top: 16px; color: var(--dash-muted); font-size: 14px; }
 .dashboard-back-link:hover { text-decoration: underline; }
 .dashboard-workspace-page { position: relative; isolation: isolate; min-height: 830px; padding: 78px 30px; }
 .dashboard-workspace-artwork { position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
@@ -302,11 +302,12 @@
   .dashboard-global-error { margin: 16px 18px 0; font-size: 13px; }
   .dashboard-root-signin .dashboard-frame { min-height: 100svh; }
   .dashboard-access { padding: 24px 16px 32px; }
-  .dashboard-signin-card { padding: 30px 22px; border-radius: 14px; }
+  .dashboard-signin-card { padding: 48px 28px 34px; border-radius: 14px; }
   .dashboard-signin-card .dashboard-brand { margin-bottom: 24px; font-size: 25px; }
   .dashboard-signin-card .dashboard-brand-symbol { height: 30px; }
   .dashboard-signin-card h1 { font-size: 35px; }
   .dashboard-signin-card > p { font-size: 18px; }
+  .dashboard-signin-card > p:first-of-type br { display: none; }
   .dashboard-github-button { min-height: 60px; gap: 12px; font-size: 17px; }
   .dashboard-github-button svg { width: 26px; height: 26px; }
   .dashboard-signin-card > .dashboard-signin-note { font-size: 13px; }
@@ -342,16 +343,16 @@
 }
 @media (max-height: 900px) and (min-width: 601px) {
   .dashboard-access { padding-block: 16px 24px; }
-  .dashboard-signin-card { padding: 24px 48px 20px; }
-  .dashboard-signin-card .dashboard-brand { margin-bottom: 8px; }
-  .dashboard-signin-card > p { margin-block: 10px 20px; }
-  .dashboard-signin-card > .dashboard-signin-note { margin-block: 12px 16px; }
-  .dashboard-divider { margin-block: 16px; }
+  .dashboard-signin-card { padding: 54px 64px 20px; }
+  .dashboard-signin-card .dashboard-brand { margin-bottom: 14px; }
+  .dashboard-signin-card > p { margin-block: 8px 14px; }
+  .dashboard-signin-card > .dashboard-signin-note { margin-block: 6px 10px; }
+  .dashboard-divider { margin-block: 10px; }
   .dashboard-back-link { margin-top: 16px; }
 }
 @media (max-height: 740px) and (max-width: 600px) {
   .dashboard-access { padding-block: 16px; }
-  .dashboard-signin-card { padding: 22px 20px 18px; }
+  .dashboard-signin-card { padding: 32px 24px 24px; }
   .dashboard-signin-card .dashboard-brand { margin-bottom: 12px; }
   .dashboard-signin-card > p { margin-block: 10px 20px; }
   .dashboard-signin-card > .dashboard-signin-note { margin-block: 12px 16px; }

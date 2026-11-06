@@ -30,7 +30,10 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--wb-ink-on-dark)
 .sign-in svg { width: 20px; height: 20px; }
 .hero { min-height: 840px; position: relative; display: flex; flex-direction: column; }
 .landing-art { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
-.landing-art[data-ready="false"] { visibility: hidden; }
+.network-fallback-route { fill: none; stroke: var(--wb-route); stroke-width: var(--wb-network-width); stroke-opacity: var(--wb-network-opacity); stroke-dasharray: var(--wb-network-dash) var(--wb-network-gap); }
+.network-fallback .route-4 { stroke: var(--wb-network-secondary-color); stroke-opacity: var(--wb-network-secondary-opacity); }
+.network[data-renderer="canvas"] .network-fallback { display: none; }
+.network:not([data-renderer="canvas"]) .flight-system { visibility: hidden; }
 .network-canvas, .network-ambient { position: absolute; inset: 0; width: 100%; height: 100%; }
 .network { position: relative; display: block; width: 100%; height: 100%; overflow: hidden; }
 .hero-content { position: relative; padding-top: 180px; }
